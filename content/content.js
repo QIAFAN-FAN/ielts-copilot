@@ -797,21 +797,75 @@
   }, true);
 
   // 鼠标移到图片上 → 右上角出「图译」小按钮（可在设置里关掉这个按钮，改用右键菜单）
+  //
+  // 这里必须非常小心，否则按钮会闪：
+  // 鼠标从图片移到按钮上时，mouseover 的目标变成按钮（不再是 img），
+  // 如果此时判定"不是图片就隐藏"，按钮会被删掉；按钮一消失鼠标又落回图片上，
+  // 又会重新建出来 —— 无限循环，而且按钮在闪烁中不断被重建，点击事件会丢失。
+  // 所以：显示/隐藏都做延时，且鼠标在自己的浮层里时不动它。
+  let imgChipHideTimer = null;
+  let imgChipShowTimer = null;
+  let imgChipTargetImg = null;
+
+  function clearImgChipHideTimer() {
+    if (imgChipHideTimer) {
+      clearTimeout(imgChipHideTimer);
+      imgChipHideTimer = null;
+    }
+  }
+
+  function clearImgChipShowTimer() {
+    if (imgChipShowTimer) {
+      clearTimeout(imgChipShowTimer);
+      imgChipShowTimer = null;
+    }
+  }
+
+  /** 延时隐藏：给用户时间从图片移到按钮上 */
+  function scheduleHideImgChip(delay = 300) {
+    clearImgChipShowTimer();
+    clearImgChipHideTimer();
+    imgChipHideTimer = setTimeout(() => {
+      imgChipHideTimer = null;
+      // 鼠标已经停在按钮上就别收
+      if (imgChip && imgChip.isConnected && imgChip.matches(':hover')) return;
+      imgChipTargetImg = null;
+      hideImgChip();
+    }, delay);
+  }
+
+  /** 延时显示：扫过图片时不会闪出一个按钮 */
+  function scheduleShowImgChip(img, delay = 220) {
+    clearImgChipHideTimer();
+    if (imgChip && imgChip.isConnected && imgChipTargetImg === img) return; // 已经在显示这张图
+    clearImgChipShowTimer();
+    imgChipShowTimer = setTimeout(() => {
+      imgChipShowTimer = null;
+      const rect = img.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      imgChipTargetImg = img;
+      showImgChip(img, rect);
+    }, delay);
+  }
+
   document.addEventListener(
     'mouseover',
     (event) => {
-      if (!settings.bubbleEnabled || !settings.imageHoverButton) return;
-      if (host && event.composedPath && event.composedPath().includes(host)) return;
-      const img = event.target?.closest?.('img, canvas');
-      if (!img) {
-        hideImgChip();
+      // 鼠标进入我们自己的浮层（含「图译」按钮）→ 取消隐藏，绝不动它
+      if (host && event.composedPath && event.composedPath().includes(host)) {
+        clearImgChipHideTimer();
         return;
       }
+      if (!settings.bubbleEnabled || !settings.imageHoverButton) return;
+
+      const img = event.target?.closest?.('img, canvas');
+      if (!img) return; // 移到非图片：不立即隐藏，交给 mouseout 的延时逻辑
+
       const rect = img.getBoundingClientRect();
       // 图标、装饰小图不值得翻
       if (rect.width < IMG_MIN_W || rect.height < IMG_MIN_H) return;
       if (rect.bottom < 0 || rect.top > window.innerHeight) return;
-      showImgChip(img, rect);
+      scheduleShowImgChip(img);
     },
     true
   );
@@ -819,8 +873,16 @@
   document.addEventListener(
     'mouseout',
     (event) => {
+      // 从按钮移出：延时隐藏；如果又回到图片上，上面的 mouseover 会取消这个计时
+      if (host && event.composedPath && event.composedPath().includes(host)) {
+        scheduleHideImgChip(200);
+        return;
+      }
       const img = event.target?.closest?.('img, canvas');
-      if (img) hideImgChip();
+      if (!img) return;
+      // 同一张图内部的冒泡（子元素之间移动）不处理，避免误收
+      if (event.relatedTarget && img.contains(event.relatedTarget)) return;
+      scheduleHideImgChip(300);
     },
     true
   );
