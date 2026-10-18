@@ -12,6 +12,30 @@
 
 ## v0.1.8
 
+### 修复：CSP 写了 `blob:` 导致扩展无法加载
+
+**报错**
+
+```
+'content_security_policy.extension_pages': Insecure CSP value "blob:" in directive 'worker-src'.
+无法加载清单。
+```
+
+**原因**：MV3 的 CSP **白名单**里，`worker-src` 只接受 `'self'` 和 `'none'`。
+我上一步为了兼容 worker 顺手加了 `blob:`，结果整个清单被拒绝 —— **扩展直接加载不了**。
+而且这个值从一开始就是多余的：既然已经设了 `workerBlobURL: false`，
+Tesseract 就不再走 `blob:` worker 了。
+
+**修法**：去掉 `blob:`，只留 `worker-src 'self'`。
+
+**验证**（三重）
+
+- 加了 **CSP 白名单逐值校验**（`script-src` / `object-src` / `worker-src` 各自允许哪些值），防止再犯
+- 确认 **OCR 在 `worker-src 'self'` 下仍能识别**：`Hello IELTS`，184ms，坐标与置信度正常
+- 用 **Chrome 自己的 `--pack-extension`** 试着打包 → 成功产出 `.crx`，说明清单被接受
+
+---
+
 ### 修复：OCR 引擎加载失败、取不到图片像素
 
 **问题 1：`Failed to execute 'importScripts' on 'WorkerGlobalScope'`**
