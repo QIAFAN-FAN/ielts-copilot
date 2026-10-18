@@ -1,0 +1,85 @@
+name: 🐛 报告一个问题
+description: 有东西不正常工作了？告诉我发生了什么
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！信息填得越全，定位越快。
+
+        > ⚠️ **请不要在 Issue 里贴你的 API Key**，截图时也记得遮住。
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 出问题的功能
+      options:
+        - 划词翻译（气泡）
+        - 阅读题解析
+        - 听力题分析
+        - 写作思路 / 作文批改
+        - 图片（上传 / 截屏 / 抓取 / 拖拽）
+        - 设置页
+        - 安装或加载扩展
+        - 其他
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 扩展版本
+      description: 在 `chrome://extensions/` 的扩展卡片上能看到
+      placeholder: 0.1.6
+    validations:
+      required: true
+
+  - type: input
+    id: page
+    attributes:
+      label: 出问题的网页地址
+      description: 如果是某个题库网站特有的问题，这一项非常关键
+      placeholder: https://www.example.com/...
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开 xxx 页面
+        2. 划选 xxx
+        3. 结果出现了 xxx
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 你期望看到什么
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际看到什么
+      description: 有报错信息请一并贴上来（记得抹掉 Key）
+    validations:
+      required: true
+
+  - type: input
+    id: chrome
+    attributes:
+      label: Chrome 版本
+      description: 在 `chrome://version/` 里看，部分问题与浏览器版本有关
+      placeholder: 128.0.x
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 确认一下
+      options:
+        - label: 我已经刷新过 `chrome://extensions/` 并重新加载了做题网页
+          required: false
+        - label: 我确认问题里没有包含我的 API Key
+          required: true

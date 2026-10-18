@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 📖 安装与使用说明
+    url: https://github.com/QIAFAN-FAN/ielts-copilot#安装约-2-分钟
+    about: 装不上、不会用、报错说没配置 Key —— 先看 README
+  - name: 📋 更新日志
+    url: https://github.com/QIAFAN-FAN/ielts-copilot/blob/main/CHANGELOG.md
+    about: 看看你遇到的问题是不是在新版本已经修好了

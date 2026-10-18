@@ -5,6 +5,15 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/QIAFAN-FAN/ielts-copilot/releases"><img src="https://img.shields.io/github/v/release/QIAFAN-FAN/ielts-copilot?label=version&color=blue" alt="版本" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-green" alt="许可协议" /></a>
+  <img src="https://img.shields.io/badge/Chrome-116%2B-yellow" alt="Chrome 版本" />
+  <img src="https://img.shields.io/badge/Manifest-V3-orange" alt="Manifest V3" />
+  <img src="https://img.shields.io/badge/offline%20dict-2365%20words-blueviolet" alt="内置词表" />
+  <img src="https://img.shields.io/badge/build-none-success" alt="无需构建" />
+</p>
+
+<p align="center">
   一个跑在 Chrome 侧边栏里的雅思备考助手 —— 划词翻译、阅读题解析、听力题分析、写作思路与批改。<br />
   自带 2400 条离线词表、术语库和词汇自学习，<b>用得越多，越省 API 花费</b>。
 </p>
@@ -212,6 +221,12 @@ lib/
 这条限制的意义就是：**你可以免费用、可以参与改进，但不能把这个项目改名换姓当成自己的作品。**
 
 如果你发现了 bug 或想加功能，欢迎提 Issue / Pull Request —— 贡献会保留你的署名。
+
+## 参与贡献
+
+欢迎提 Issue 和 Pull Request —— 具体规范见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+发现**安全问题**请走 [SECURITY.md](SECURITY.md) 里的私密渠道，不要开公开 Issue（那会让所有使用者的风险暴露）。
 
 ## 作者
 
