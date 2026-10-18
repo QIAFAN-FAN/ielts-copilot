@@ -96,6 +96,15 @@ input[type='range'] {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 多语言适配：英 / 日 / 韩 / 越 文字更长，按钮内不折行，按需整体换行 */
+.row > button,
+.term-list button,
+button.primary,
+button.ghost {
+  white-space: nowrap;
 }
 
 .grid2 {
