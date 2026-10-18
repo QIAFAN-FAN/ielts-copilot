@@ -355,7 +355,7 @@ async function runOcr(dataUrl, jobId) {
       target: 'offscreen',
       type: 'ocr:recognize',
       dataUrl,
-      lang: 'eng+chi_sim',
+      lang: 'eng+chi_sim+jpn',
       jobId
     });
     if (!res) return { ok: false, error: 'OCR 没有返回结果（后台可能刚被回收，再点一次即可）。' };

@@ -1125,26 +1125,70 @@
     const scaleX = rect.width / (naturalW || rect.width);
     const scaleY = rect.height / (naturalH || rect.height);
 
+    // 用一个离屏 canvas 量字宽，用来自适应字号
+    const measure = document.createElement('canvas').getContext('2d');
+    const FONT = '600 __SIZE__px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+    const textWidth = (text, size) => {
+      measure.font = FONT.replace('__SIZE__', String(size));
+      return measure.measureText(text).width;
+    };
+
     let painted = 0;
     for (const line of lines || []) {
       const zh = String(line?.translated || '').trim();
       if (!zh) continue;
       const box = line.bbox || {};
       if (typeof box.x0 !== 'number') continue;
-      const left = box.x0 * scaleX;
-      const top = box.y0 * scaleY;
-      const width = Math.max(8, (box.x1 - box.x0) * scaleX);
-      const height = Math.max(8, (box.y1 - box.y0) * scaleY);
+
+      // 原文这一行的位置（相对覆盖层）
+      const rawLeft = Math.max(0, box.x0 * scaleX);
+      const rawTop = Math.max(0, box.y0 * scaleY);
+      const rawW = Math.max(4, (box.x1 - box.x0) * scaleX);
+      const rawH = Math.max(4, (box.y1 - box.y0) * scaleY);
+
+      // ① 横向刚好贴合原文宽度（不额外加内边距，避免顶到相邻块）
+      let boxLeft = rawLeft;
+      let boxW = rawW;
+
+      // ② 纵向：字号至少要 10px 才看得清。框太矮就往上/下各扩一点，
+      //    优先往上（OCR 的 y0 通常贴着文字顶部，往上扩不容易压到下一行）
+      const minFont = 10;
+      let boxH = Math.max(rawH, minFont);
+      let boxTop = rawTop;
+      if (boxH > rawH) {
+        const grow = boxH - rawH;
+        boxTop = Math.max(0, rawTop - grow * 0.6);
+      }
+      // 不要超出整个覆盖层
+      if (boxTop + boxH > rect.height) boxTop = Math.max(0, rect.height - boxH);
+      if (boxLeft + boxW > rect.width) boxW = Math.max(4, rect.width - boxLeft);
+
+      // ③ 字号自适应：从「框高的 0.92 倍」开始往下试，直到这一行能放得下
+      let fontSize = Math.min(boxH * 0.92, 30);
+      while (fontSize > minFont && textWidth(zh, fontSize) > boxW - 2) {
+        fontSize = Math.round((fontSize - 0.4) * 10) / 10;
+      }
+      // 循环可能降到 minFont 以下，兜回来保证可读
+      if (fontSize < minFont) fontSize = minFont;
+
+      // ④ 缩到最小还是放不下 → 横向压缩（保留清晰度，只压扁宽度）
+      //    但压缩也有下限：压得太狠会变成一条细线，反而看不清。
+      //    宁可截断（超出的部分被 overflow 裁掉，鼠标悬停能看全文）。
+      const need = textWidth(zh, fontSize);
+      let squeeze = need > boxW - 2 ? (boxW - 2) / need : 1;
+      if (squeeze < 0.62) squeeze = 0.62;
 
       const item = document.createElement('div');
       item.className = 'ocr-line';
-      const fontSize = Math.max(9, Math.min(height * 0.82, 22));
       item.style.cssText =
-        `position:absolute;left:${left}px;top:${top}px;` +
-        `width:${width}px;height:${height}px;` +
-        `font-size:${fontSize}px;line-height:${height}px;`;
+        `position:absolute;left:${boxLeft}px;top:${boxTop}px;` +
+        `width:${boxW}px;height:${boxH}px;` +
+        `font-size:${fontSize}px;` +
+        `display:flex;align-items:center;justify-content:flex-start;` +
+        `overflow:hidden;white-space:nowrap;` +
+        (squeeze < 1 ? `transform:scaleX(${squeeze.toFixed(3)});transform-origin:left center;` : '');
       item.textContent = zh;
-      item.title = zh;
+      item.title = `${zh}\n（原文：${String(line.text || '').trim()}）`;
       overlay.appendChild(item);
       painted += 1;
     }
