@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>OCR worker</title>
+  </head>
+  <body>
+    <!-- 本地 OCR 引擎：放在 offscreen 文档里跑，这样不用打开侧边栏、也不受目标网页 CSP 限制 -->
+    <script src="../lib/ocr/tesseract.min.js"></script>
+    <script type="module" src="offscreen.js"></script>
+  </body>
+</html>

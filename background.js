@@ -21,7 +21,8 @@ const MENUS = [
   { id: 'ielts-selection-detail', title: '雅思助手：精讲选中的文字', contexts: ['selection'] },
   { id: 'ielts-reading', title: '雅思助手：分析本页阅读题', contexts: ['page', 'selection'] },
   { id: 'ielts-listening', title: '雅思助手：分析选中的听力题', contexts: ['selection', 'page'] },
-  { id: 'ielts-writing', title: '雅思助手：帮我写这套作文', contexts: ['selection', 'page'] }
+  { id: 'ielts-writing', title: '雅思助手：帮我写这套作文', contexts: ['selection', 'page'] },
+  { id: 'ielts-image', title: '雅思助手：翻译这张图片里的文字', contexts: ['image'] }
 ];
 
 async function setupExtension() {
@@ -50,6 +51,20 @@ const MENU_TO_MODE = {
 };
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  // 图片翻译：右键图片 → 让页面那张图自己走一遍翻译流程
+  if (info.menuItemId === 'ielts-image') {
+    if (!tab?.id) return;
+    try {
+      await chrome.tabs.sendMessage(tab.id, {
+        type: 'translateImageByUrl',
+        url: info.srcUrl || ''
+      });
+    } catch {
+      /* 页面可能还没加载 content script，忽略 */
+    }
+    return;
+  }
+
   const mode = MENU_TO_MODE[info.menuItemId];
   if (!mode || !tab?.id) return;
 
@@ -289,6 +304,106 @@ async function withTimeout(fn, ms = TIMEOUT_MS) {
   }
 }
 
+/**
+ * 确保 offscreen 文档存在（OCR 要在有 DOM + 能跑 WASM 的环境里执行，
+ * service worker 两者都没有；内容脚本又会受目标网页 CSP 限制）。
+ */
+async function ensureOffscreen() {
+  try {
+    if (chrome.offscreen?.hasDocument) {
+      const has = await chrome.offscreen.hasDocument();
+      if (has) return;
+    } else {
+      const contexts = await chrome.runtime.getContexts?.({
+        contextTypes: ['OFFSCREEN_DOCUMENT']
+      });
+      if (Array.isArray(contexts) && contexts.length) return;
+    }
+    await chrome.offscreen.createDocument({
+      url: 'offscreen/offscreen.html',
+      reasons: ['WORKERS'],
+      justification: '本地 OCR 识别图片里的文字（不联网、不消耗 API）'
+    });
+  } catch (err) {
+    const message = String(err?.message || err);
+    // 已存在时创建会报错，忽略即可
+    if (!/single offscreen|already/i.test(message)) throw err;
+  }
+}
+
+/** 在 offscreen 里跑一次 OCR */
+async function runOcr(dataUrl, jobId) {
+  try {
+    await ensureOffscreen();
+  } catch (err) {
+    return { ok: false, error: `OCR 环境启动失败：${String(err?.message || err)}` };
+  }
+  try {
+    const res = await chrome.runtime.sendMessage({
+      target: 'offscreen',
+      type: 'ocr:recognize',
+      dataUrl,
+      lang: 'eng+chi_sim',
+      jobId
+    });
+    if (!res) return { ok: false, error: 'OCR 没有返回结果（后台可能刚被回收，再点一次即可）。' };
+    return res;
+  } catch (err) {
+    return { ok: false, error: `OCR 失败：${String(err?.message || err)}` };
+  }
+}
+
+/**
+ * 逐行翻译 OCR 结果。
+ *
+ * 关键：**一次请求翻全部行**，用「序号. 文本」的形式发过去并要求原样返回序号，
+ * 这样能把译文按行对回去、放回原来的位置。逐行调用接口虽然更简单，但几十行就是
+ * 几十次请求，又慢又贵。
+ * 只有纯数字/符号的行会被跳过（不需要翻译，也省 token）。
+ */
+async function translateOcrLines(lines, settings) {
+  const targets = [];
+  lines.forEach((line, index) => {
+    if (/[A-Za-z\u4e00-\u9fff]/.test(String(line?.text || ''))) {
+      targets.push({ index, text: String(line.text) });
+    }
+  });
+  if (!targets.length) return lines;
+
+  const payload = targets.map((item, i) => `${i + 1}. ${item.text}`).join('\n');
+  let raw = '';
+  try {
+    raw = await chatCompletion({
+      settings,
+      messages: [
+        {
+          role: 'system',
+          content:
+            '你是翻译助手。把用户给的编号文本逐行翻译成简体中文。' +
+            '必须严格遵守：保持「序号. 译文」的格式；一个序号一行；不要合并、不要省略、不要增删行；不要输出任何解释、标题或前后缀。'
+        },
+        { role: 'user', content: payload }
+      ],
+      stream: false
+    });
+  } catch {
+    // 翻译失败不算致命错误：把原文显示出来也比什么都不显示好
+    return lines;
+  }
+
+  const map = new Map();
+  for (const match of String(raw || '').matchAll(/(\d+)\s*[.、)]\s*([^\n]+)/g)) {
+    map.set(Number(match[1]), match[2].trim());
+  }
+
+  return lines.map((line, index) => {
+    const pos = targets.findIndex((item) => item.index === index);
+    if (pos < 0) return line;
+    const zh = map.get(pos + 1);
+    return zh ? { ...line, translated: zh } : line;
+  });
+}
+
 async function handleMessage(msg) {
   switch (msg?.type) {
     case 'translate': {
@@ -402,6 +517,45 @@ async function handleMessage(msg) {
       if (!tab?.id) return { ok: false, error: '找不到当前标签页。' };
       const selection = await readSelection(tab.id, tab.url);
       return { ok: true, data: { title: tab.title || '', url: tab.url || '', selection } };
+    }
+
+    case 'fetchImage': {
+      // 跨域图片取像素：内容脚本受页面 CORS 限制，后台有 host 权限可以直接取
+      if (!msg.url) return { ok: false, error: '缺少图片地址。' };
+      try {
+        const res = await fetch(msg.url, { credentials: 'include' });
+        if (!res.ok) return { ok: false, error: `取图失败（HTTP ${res.status}）。` };
+        const blob = await res.blob();
+        if (!/^image\//.test(blob.type)) return { ok: false, error: '这个地址不是图片。' };
+        if (blob.size > 8 * 1024 * 1024) return { ok: false, error: '图片太大（超过 8MB）。' };
+        const buffer = await blob.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        const chunk = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunk) {
+          binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+        }
+        return { ok: true, data: { dataUrl: `data:${blob.type};base64,${btoa(binary)}` } };
+      } catch (err) {
+        return { ok: false, error: `取图失败：${String(err?.message || err)}` };
+      }
+    }
+
+    case 'translateImage': {
+      // 页面上的图片翻译：本地 OCR（offscreen 里跑）+ 一次批量翻译
+      const settings = await getSettings();
+      if (!settings.apiKey) return { ok: false, error: '还没有配置 DeepSeek API Key。' };
+      if (!msg.dataUrl) return { ok: false, error: '没有拿到图片数据。' };
+
+      const ocr = await runOcr(msg.dataUrl, msg.jobId);
+      if (!ocr.ok) return ocr;
+      const lines = Array.isArray(ocr.lines) ? ocr.lines : [];
+      if (!lines.length) {
+        return { ok: false, error: '这张图里没识别到文字（可能是纯图表，或字太小/太模糊）。' };
+      }
+
+      const translated = await translateOcrLines(lines, settings);
+      return { ok: true, data: { lines: translated, count: translated.filter((l) => l.translated).length } };
     }
 
     case 'captureTab': {

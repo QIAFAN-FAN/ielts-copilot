@@ -6,7 +6,13 @@
   const MAX_SELECTION = 4000;
   const MAX_PAGE_TEXT = 40000;
 
-  let settings = { bubbleEnabled: true, autoTranslate: false, bubbleOpacity: 1, copyFormat: 'zh' };
+  let settings = {
+    bubbleEnabled: true,
+    autoTranslate: false,
+    bubbleOpacity: 1,
+    copyFormat: 'zh',
+    imageHoverButton: true
+  };
   let host = null;
   let shadow = null;
   let chip = null;
@@ -25,6 +31,7 @@
         settings.autoTranslate = s.autoTranslate === true;
         settings.bubbleOpacity = s.bubbleOpacity === undefined ? 1 : Number(s.bubbleOpacity);
         settings.copyFormat = ['zh', 'en', 'both'].includes(s.copyFormat) ? s.copyFormat : 'zh';
+        settings.imageHoverButton = s.imageHoverButton !== false;
         applyOpacity();
         if (!settings.bubbleEnabled) hideAll();
       });
@@ -164,6 +171,34 @@
     .vocab b { color: #1a73e8; font-weight: 600; }
     .vocab .term { margin-left: auto; opacity: .55; font-size: 13px; padding: 0 2px; }
     .vocab .term:hover { opacity: 1; }
+
+    /* 图片翻译：图上的「图译」小按钮 */
+    .img-chip {
+      position: fixed; z-index: 2147483647;
+      padding: 3px 9px; border: none; border-radius: 999px;
+      background: #1a73e8; color: #fff; font-size: 12px; font-weight: 700;
+      cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.24);
+      opacity: var(--ielts-opacity, 1); transition: opacity .18s ease;
+    }
+    .img-chip:hover { background: #1765cc; opacity: 1; }
+
+    /* 图片翻译：覆盖在图片上的译文层 */
+    .ocr-overlay {
+      z-index: 2147483646; cursor: pointer;
+      background: rgba(255,255,255,.06);
+    }
+    .ocr-line {
+      position: absolute; overflow: hidden; white-space: nowrap;
+      text-overflow: ellipsis; padding: 0 3px; box-sizing: border-box;
+      background: rgba(255,255,255,.94); color: #1f2430;
+      border-radius: 3px; font-weight: 500;
+    }
+    .ocr-close {
+      position: absolute; right: -8px; top: -10px;
+      width: 20px; height: 20px; border-radius: 50%; border: none;
+      background: #202124; color: #fff; font-size: 11px; line-height: 1;
+      cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.3);
+    }
     .status { color: #5f6368; font-size: 13px; }
     .error { color: #c5221f; font-size: 13px; }
     .retry {
@@ -761,6 +796,35 @@
     hideAll();
   }, true);
 
+  // 鼠标移到图片上 → 右上角出「图译」小按钮（可在设置里关掉这个按钮，改用右键菜单）
+  document.addEventListener(
+    'mouseover',
+    (event) => {
+      if (!settings.bubbleEnabled || !settings.imageHoverButton) return;
+      if (host && event.composedPath && event.composedPath().includes(host)) return;
+      const img = event.target?.closest?.('img, canvas');
+      if (!img) {
+        hideImgChip();
+        return;
+      }
+      const rect = img.getBoundingClientRect();
+      // 图标、装饰小图不值得翻
+      if (rect.width < IMG_MIN_W || rect.height < IMG_MIN_H) return;
+      if (rect.bottom < 0 || rect.top > window.innerHeight) return;
+      showImgChip(img, rect);
+    },
+    true
+  );
+
+  document.addEventListener(
+    'mouseout',
+    (event) => {
+      const img = event.target?.closest?.('img, canvas');
+      if (img) hideImgChip();
+    },
+    true
+  );
+
   // 气泡画在屏幕坐标上（position: fixed），页面一滚动它就跟原文错位、甚至挡住内容。
   // 所以未「固定」的气泡随页面滚动关闭；用户主动固定（📌）的保留。
   let lastScrollY = window.scrollY;
@@ -769,6 +833,8 @@
     // capture 阶段能收到所有元素上的 scroll。气泡自己滚动看长译文时不该把气泡关掉，
     // 所以这里把气泡内部的滚动排除掉。
     if (host && event?.target && event.target !== document && host.contains(event.target)) return;
+
+    hideImgChip(); // 图片小按钮固定在屏幕坐标上，滚动后位置会错，直接收掉
 
     // 划词时页面常有几像素的抖动（触控板惯性、浏览器把选区滚进视野、SPA 布局微调），
     // 以前任何一点滚动都会收掉小圆点，表现就是"按钮闪一下就没了"。小幅滚动直接忽略。
@@ -782,9 +848,201 @@
 
   window.addEventListener('scroll', onPageScroll, { passive: true, capture: true });
 
+  /* ---------------- 图片翻译 ---------------- */
+
+  const IMG_MIN_W = 90; // 太小的图标不值得翻
+  const IMG_MIN_H = 60;
+
+  let imgChip = null;
+  let imgOverlay = null;
+  let imgBusy = false;
+
+  function hideImgChip() {
+    if (imgChip && imgChip.isConnected) imgChip.remove();
+    imgChip = null;
+  }
+
+  /** 在图片右上角放一个「图译」小按钮 */
+  function showImgChip(img, rect) {
+    ensureHost();
+    hideImgChip();
+    imgChip = document.createElement('button');
+    imgChip.className = 'img-chip';
+    imgChip.textContent = '图译';
+    imgChip.title = '翻译这张图里的文字（本地识别，识别本身不花 API 费用）';
+    imgChip.addEventListener('mousedown', (e) => e.preventDefault());
+    imgChip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      hideImgChip();
+      translateImage(img, rect);
+    });
+    shadow.appendChild(imgChip);
+    imgChip.style.cssText =
+      `position:fixed;left:${Math.round(rect.left + rect.width - 48)}px;` +
+      `top:${Math.round(rect.top + 6)}px;`;
+  }
+
+  /** 把页面上的图片转成 dataURL：同源用 canvas，跨域交给后台 fetch */
+  async function imageToDataUrl(img) {
+    const isCanvas = img.tagName === 'CANVAS';
+    if (!isCanvas) {
+      const raw = img.currentSrc || img.src || '';
+      if (raw.startsWith('data:')) return raw;
+    }
+    // 先本地取（同源可行，也省一次网络）
+    try {
+      const canvas = document.createElement('canvas');
+      const w = isCanvas ? img.width : img.naturalWidth || img.width;
+      const h = isCanvas ? img.height : img.naturalHeight || img.height;
+      if (w && h) {
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        const url = canvas.toDataURL('image/png');
+        // 跨域被污染时 toDataURL 会抛错，走不到这里
+        if (url && url.length > 200) return url;
+      }
+    } catch {
+      /* 跨域污染：交给后台按 URL 取 */
+    }
+    if (isCanvas) return '';
+    const src = img.currentSrc || img.src || '';
+    if (!/^https?:/i.test(src)) return '';
+    const res = await sendMessage({ type: 'fetchImage', url: src });
+    return res?.ok ? res.data?.dataUrl || '' : '';
+  }
+
+  /** 把译文按原坐标覆盖回图片上；点遮罩或右上角 ✕ 收起 */
+  function renderImageOverlay(img, lines, rect) {
+    removeImageOverlay();
+    ensureHost();
+    const overlay = document.createElement('div');
+    overlay.className = 'ocr-overlay';
+
+    // 用页面坐标（absolute），图片跟着页面滚动时覆盖层也一起走
+    overlay.style.cssText =
+      `position:absolute;left:${rect.left + window.scrollX}px;` +
+      `top:${rect.top + window.scrollY}px;` +
+      `width:${rect.width}px;height:${rect.height}px;`;
+
+    const naturalW = img.naturalWidth || img.width || rect.width;
+    const naturalH = img.naturalHeight || img.height || rect.height;
+    const scaleX = rect.width / (naturalW || rect.width);
+    const scaleY = rect.height / (naturalH || rect.height);
+
+    let painted = 0;
+    for (const line of lines || []) {
+      const zh = String(line?.translated || '').trim();
+      if (!zh) continue;
+      const box = line.bbox || {};
+      if (typeof box.x0 !== 'number') continue;
+      const left = box.x0 * scaleX;
+      const top = box.y0 * scaleY;
+      const width = Math.max(8, (box.x1 - box.x0) * scaleX);
+      const height = Math.max(8, (box.y1 - box.y0) * scaleY);
+
+      const item = document.createElement('div');
+      item.className = 'ocr-line';
+      const fontSize = Math.max(9, Math.min(height * 0.82, 22));
+      item.style.cssText =
+        `position:absolute;left:${left}px;top:${top}px;` +
+        `width:${width}px;height:${height}px;` +
+        `font-size:${fontSize}px;line-height:${height}px;`;
+      item.textContent = zh;
+      item.title = zh;
+      overlay.appendChild(item);
+      painted += 1;
+    }
+
+    if (!painted) {
+      toast('识别出了文字，但翻译没成功 —— 可以再点一次');
+      return;
+    }
+
+    const close = document.createElement('button');
+    close.className = 'ocr-close';
+    close.textContent = '✕';
+    close.title = '收起译文';
+    close.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeImageOverlay();
+    });
+    overlay.appendChild(close);
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === close) return;
+      removeImageOverlay();
+    });
+
+    shadow.appendChild(overlay);
+    imgOverlay = overlay;
+    toast(`已翻译 ${painted} 行，点一下遮罩即可收起`);
+  }
+
+  function removeImageOverlay() {
+    if (imgOverlay && imgOverlay.isConnected) imgOverlay.remove();
+    imgOverlay = null;
+  }
+
+  /** 翻译一张图片：取图 → 后台 OCR + 翻译 → 覆盖回原位 */
+  async function translateImage(img, rect) {
+    if (imgBusy) {
+      toast('上一张还在识别，稍等一下');
+      return;
+    }
+    imgBusy = true;
+    try {
+      const dataUrl = await imageToDataUrl(img);
+      if (!dataUrl) {
+        toast('取不到这张图的像素（可能跨域受限），可以改用「截取当前画面」');
+        return;
+      }
+      toast('正在识别图片文字…（首次要加载本地 OCR 模型，会慢一点）');
+      const res = await sendMessage({
+        type: 'translateImage',
+        dataUrl,
+        jobId: `img-${Date.now()}`
+      });
+      if (!res?.ok) {
+        toast(res?.error || '图片翻译失败');
+        return;
+      }
+      renderImageOverlay(img, res.data?.lines || [], rect);
+    } catch (err) {
+      toast(`图片翻译失败：${String(err?.message || err)}`);
+    } finally {
+      imgBusy = false;
+    }
+  }
+
   /* ---------------- 响应后台请求 ---------------- */
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type === 'translateImageByUrl') {
+      // 右键菜单进来的：找到页面上的那张图，走同一套翻译流程
+      const url = String(msg.url || '');
+      const candidates = Array.from(document.querySelectorAll('img, canvas'));
+      const img =
+        candidates.find((el) => el.currentSrc === url || el.src === url) ||
+        candidates.find((el) => {
+          const src = el.currentSrc || el.src || '';
+          if (!src || !url) return false;
+          // 有些站点给图片加了缩放参数，用文件名兜底匹配
+          const name = (s) => s.split('?')[0].split('/').pop();
+          return name(src) && name(src) === name(url);
+        });
+      if (!img) {
+        toast('没找到地应那张图片，可能它已经不在页面上了');
+        sendResponse({ ok: false });
+        return false;
+      }
+      const rect = img.getBoundingClientRect();
+      translateImage(img, rect);
+      sendResponse({ ok: true });
+      return false;
+    }
+
     if (msg?.type === 'toast') {
       toast(msg.message || '');
       sendResponse({ ok: true });

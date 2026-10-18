@@ -32,6 +32,7 @@ const els = {
   bubbleEnabled: document.getElementById('bubbleEnabled'),
   bubbleOpacity: document.getElementById('bubbleOpacity'),
   bubbleOpacityValue: document.getElementById('bubbleOpacityValue'),
+  imageHoverButton: document.getElementById('imageHoverButton'),
   copyFormat: document.getElementById('copyFormat'),
   autoTranslate: document.getElementById('autoTranslate'),
   stream: document.getElementById('stream'),
@@ -89,6 +90,7 @@ function fillUI(value) {
   els.bubbleOpacity.value = String(value.bubbleOpacity ?? DEFAULTS.bubbleOpacity);
   els.bubbleOpacityValue.textContent = `${Math.round(Number(els.bubbleOpacity.value) * 100)}%`;
   els.copyFormat.value = value.copyFormat || DEFAULTS.copyFormat;
+  els.imageHoverButton.checked = value.imageHoverButton !== false;
   els.autoTranslate.checked = value.autoTranslate === true;
   els.stream.checked = value.stream !== false;
   els.webSearch.checked = value.webSearch !== false;
@@ -114,6 +116,7 @@ function collect() {
     bubbleEnabled: els.bubbleEnabled.checked,
     bubbleOpacity: Number(els.bubbleOpacity.value),
     copyFormat: els.copyFormat.value,
+    imageHoverButton: els.imageHoverButton.checked,
     autoTranslate: els.autoTranslate.checked,
     stream: els.stream.checked,
     webSearch: els.webSearch.checked,
