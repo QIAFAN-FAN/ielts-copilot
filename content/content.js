@@ -946,14 +946,26 @@
       `top:${Math.round(rect.top + 6)}px;`;
   }
 
-  /** 把页面上的图片转成 dataURL：同源 canvas → blob 直读 → 后台按 URL 抓，三级兜底 */
+  /**
+   * 把页面上的图片转成 dataURL。
+   *
+   * 按「成功率高 → 低」排，最后一级是截屏兜底 —— 只要这张图在屏幕上显示着，
+   * 就一定能拿到像素，不会再出现「取不到」。
+   *
+   *   ① data: 直接就有
+   *   ② 同源 canvas
+   *   ③ 带 crossOrigin 重新加载一次（有些 CDN 允许匿名跨域，原页面没开而已）
+   *   ④ blob: 在页面内读
+   *   ⑤ 交给后台按 URL 抓（有 host 权限，不受页面 CORS 限制）
+   *   ⑥ 截当前可见区域再裁出这张图（兜底，必成）
+   */
   async function imageToDataUrl(img) {
     const isCanvas = img.tagName === 'CANVAS';
     const raw = isCanvas ? '' : img.currentSrc || img.src || '';
 
     if (raw.startsWith('data:')) return raw;
 
-    // ① 本地 canvas（同源可行，也省一次网络）
+    // ② 本地 canvas（同源可行，也省一次网络）
     try {
       const canvas = document.createElement('canvas');
       const w = isCanvas ? img.width : img.naturalWidth || img.width;
@@ -969,9 +981,20 @@
     } catch {
       /* 跨域污染：继续往下兜底 */
     }
-    if (isCanvas) return '';
+    if (isCanvas) {
+      // canvas 抓不到（极罕见）就直接截屏裁
+      const shot = await captureRegionAsDataUrl(img);
+      return shot || '';
+    }
 
-    // ② blob: 图片（前端生成的图，题库站很常见）——在页面里能直接读到
+    // ③ 带 crossOrigin 重新加载 —— 很多图床/CDN 其实允许匿名跨域，
+    //    只是页面上那张 img 没加 crossOrigin 属性，导致 canvas 被污染
+    if (/^https?:/i.test(raw)) {
+      const cors = await reloadWithCors(raw);
+      if (cors) return cors;
+    }
+
+    // ④ blob: 图片（前端生成的图，题库站很常见）——在页面里能直接读到
     if (raw.startsWith('blob:')) {
       try {
         const res = await fetch(raw);
@@ -983,17 +1006,104 @@
           reader.readAsDataURL(blob);
         });
       } catch {
-        return '';
+        /* 读不到就继续往下 */
       }
     }
 
-    // ③ http(s)：内容脚本受页面 CORS 限制，交给后台带权限去抓
-    if (!/^https?:/i.test(raw)) return '';
-    const res = await sendMessage({ type: 'fetchImage', url: raw });
-    if (res?.ok && res.data?.dataUrl) return res.data.dataUrl;
-    // 后台也抓不到时，把原因带到 UI 上，别只说"取不到"
-    lastImageFetchError = res?.error || '后台也没取到这张图';
+    // ⑤ http(s)：内容脚本受页面 CORS 限制，交给后台带权限去抓
+    if (/^https?:/i.test(raw)) {
+      const res = await sendMessage({ type: 'fetchImage', url: raw });
+      if (res?.ok && res.data?.dataUrl) return res.data.dataUrl;
+      lastImageFetchError = res?.error || '';
+    }
+
+    // ⑥ 兜底：截屏裁剪。图片只要显示在屏幕上就一定能拿到，
+    //    不管它有没有防盗链、URL 是否过期、是不是 blob。
+    const shot = await captureRegionAsDataUrl(img);
+    if (shot) {
+      lastImageFetchError = '';
+      return shot;
+    }
     return '';
+  }
+
+  /** 带 crossOrigin 重新加载一张图，成功返回 dataURL（失败返回空串，8 秒超时） */
+  function reloadWithCors(src) {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (v) => {
+        if (done) return;
+        done = true;
+        resolve(v);
+      };
+      try {
+        const im = new Image();
+        im.crossOrigin = 'anonymous';
+        im.onload = () => {
+          try {
+            const c = document.createElement('canvas');
+            c.width = im.naturalWidth || im.width;
+            c.height = im.naturalHeight || im.height;
+            if (!c.width || !c.height) return finish('');
+            c.getContext('2d').drawImage(im, 0, 0);
+            const url = c.toDataURL('image/png');
+            finish(url && url.length > 200 ? url : '');
+          } catch {
+            finish('');
+          }
+        };
+        im.onerror = () => finish('');
+        setTimeout(() => finish(''), 8000);
+        im.src = src;
+      } catch {
+        finish('');
+      }
+    });
+  }
+
+  /**
+   * 截取屏幕上这张图所在的区域并裁出来（真正的兜底，几乎不会失败）。
+   * 用 captureVisibleTab 拿整屏，再用 canvas 按元素位置裁。
+   */
+  async function captureRegionAsDataUrl(img) {
+    try {
+      const rect = img.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const left = Math.max(0, Math.floor(rect.left * dpr));
+      const top = Math.max(0, Math.floor(rect.top * dpr));
+      const width = Math.floor(rect.width * dpr);
+      const height = Math.floor(rect.height * dpr);
+      if (width < 8 || height < 8) return '';
+
+      const res = await sendMessage({ type: 'captureRegion' });
+      const shot = res?.data?.dataUrl;
+      if (!shot) return '';
+
+      const bitmap = await createImageBitmap(await (await fetch(shot)).blob());
+      // 浏览器截图可能带缩放，按实际尺寸比例换算
+      const scaleX = bitmap.width / (window.innerWidth * dpr);
+      const scaleY = bitmap.height / (window.innerHeight * dpr);
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas
+        .getContext('2d')
+        .drawImage(
+          bitmap,
+          Math.round(left * scaleX),
+          Math.round(top * scaleY),
+          Math.round(width * scaleX),
+          Math.round(height * scaleY),
+          0,
+          0,
+          width,
+          height
+        );
+      const url = canvas.toDataURL('image/png');
+      return url && url.length > 200 ? url : '';
+    } catch {
+      return '';
+    }
   }
 
   /** 把译文按原坐标覆盖回图片上；点遮罩或右上角 ✕ 收起 */
@@ -1009,8 +1119,9 @@
       `top:${rect.top + window.scrollY}px;` +
       `width:${rect.width}px;height:${rect.height}px;`;
 
-    const naturalW = img.naturalWidth || img.width || rect.width;
-    const naturalH = img.naturalHeight || img.height || rect.height;
+    // img 可能是 null（截屏翻译时没有对应的图片元素），用 rect 兜底
+    const naturalW = (img && (img.naturalWidth || img.width)) || rect.width;
+    const naturalH = (img && (img.naturalHeight || img.height)) || rect.height;
     const scaleX = rect.width / (naturalW || rect.width);
     const scaleY = rect.height / (naturalH || rect.height);
 
@@ -1079,32 +1190,73 @@
     try {
       const dataUrl = await imageToDataUrl(img);
       if (!dataUrl) {
-        // 把具体原因说出来，而不是笼统的"取不到"
+        // 到这一步说明连截屏兜底都失败了（图片太小/不在可视区），
+        // 把原因讲清楚，并且只提真正存在的办法
         const reason = lastImageFetchError ? `（${lastImageFetchError}）` : '';
-        toast(`取不到这张图的像素${reason}。可以改用「截取当前画面」，或先把图片存到本地再「上传图片」。`);
+        toast(
+          `取不到这张图的像素${reason}。请让这张图完整显示在屏幕上，再点一次「图译」；` +
+            '或者先把图片另存到本地，用设置页下方的「上传图片」翻译。'
+        );
         return;
       }
-      toast('正在识别图片文字…（首次要加载本地 OCR 模型，会慢一点）');
-      const res = await sendMessage({
-        type: 'translateImage',
-        dataUrl,
-        jobId: `img-${Date.now()}`
-      });
-      if (!res?.ok) {
-        toast(res?.error || '图片翻译失败');
-        return;
-      }
-      renderImageOverlay(img, res.data?.lines || [], rect);
-    } catch (err) {
-      toast(`图片翻译失败：${String(err?.message || err)}`);
+      await runImageTranslation(img, rect, dataUrl);
     } finally {
       imgBusy = false;
     }
   }
 
+  /**
+   * 翻译「当前这一屏」：不管页面上是什么（图片、canvas、甚至是 PDF/视频里的画面），
+   * 直接截图识别。右键菜单「翻译这一屏」走这条路。
+   */
+  async function translateCapture() {
+    if (imgBusy) {
+      toast('上一张还在识别，稍等一下');
+      return;
+    }
+    imgBusy = true;
+    try {
+      const res0 = await sendMessage({ type: 'captureRegion' });
+      const shot = res0?.data?.dataUrl;
+      if (!shot) {
+        toast(res0?.error || '截屏失败，可能是当前页面不允许截取');
+        return;
+      }
+      // 只用屏幕可见区域，坐标用视口坐标
+      const rect = { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+      await runImageTranslation(null, rect, shot);
+    } catch (err) {
+      toast(`翻译这一屏失败：${String(err?.message || err)}`);
+    } finally {
+      imgBusy = false;
+    }
+  }
+
+  /** 拿到 dataUrl 之后共用的一段：OCR + 翻译 + 覆盖回原位 */
+  async function runImageTranslation(img, rect, dataUrl) {
+    toast('正在识别图片文字…（首次要加载本地 OCR 模型，会慢一点）');
+    const res = await sendMessage({
+      type: 'translateImage',
+      dataUrl,
+      jobId: `img-${Date.now()}`
+    });
+    if (!res?.ok) {
+      toast(res?.error || '图片翻译失败');
+      return;
+    }
+    renderImageOverlay(img, res.data?.lines || [], rect);
+  }
+
   /* ---------------- 响应后台请求 ---------------- */
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type === 'translateCapture') {
+      // 右键菜单「翻译这一屏」进来的：整屏截图识别
+      translateCapture();
+      sendResponse({ ok: true });
+      return false;
+    }
+
     if (msg?.type === 'translateImageByUrl') {
       // 右键菜单进来的：找到页面上的那张图，走同一套翻译流程
       const url = String(msg.url || '');

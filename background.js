@@ -22,7 +22,8 @@ const MENUS = [
   { id: 'ielts-reading', title: '雅思助手：分析本页阅读题', contexts: ['page', 'selection'] },
   { id: 'ielts-listening', title: '雅思助手：分析选中的听力题', contexts: ['selection', 'page'] },
   { id: 'ielts-writing', title: '雅思助手：帮我写这套作文', contexts: ['selection', 'page'] },
-  { id: 'ielts-image', title: '雅思助手：翻译这张图片里的文字', contexts: ['image'] }
+  { id: 'ielts-image', title: '雅思助手：翻译这张图片里的文字', contexts: ['image'] },
+  { id: 'ielts-capture', title: '雅思助手：翻译这一屏（截图识别）', contexts: ['page', 'image'] }
 ];
 
 async function setupExtension() {
@@ -51,6 +52,17 @@ const MENU_TO_MODE = {
 };
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  // 截屏识别：不用取图，直接截图，适合防盗链图片 / PDF / 视频画面
+  if (info.menuItemId === 'ielts-capture') {
+    if (!tab?.id) return;
+    try {
+      await chrome.tabs.sendMessage(tab.id, { type: 'translateCapture' });
+    } catch {
+      /* 页面可能还没加载 content script，忽略 */
+    }
+    return;
+  }
+
   // 图片翻译：右键图片 → 让页面那张图自己走一遍翻译流程
   if (info.menuItemId === 'ielts-image') {
     if (!tab?.id) return;
@@ -517,6 +529,20 @@ async function handleMessage(msg) {
       if (!tab?.id) return { ok: false, error: '找不到当前标签页。' };
       const selection = await readSelection(tab.id, tab.url);
       return { ok: true, data: { title: tab.title || '', url: tab.url || '', selection } };
+    }
+
+    case 'captureRegion': {
+      // 截当前可见区域，交给内容脚本裁剪。用于图片有防盗链/URL 过期/blob 且
+      // 前面几级都取不到时兜底 —— 只要图在屏幕上显示，就一定能拿到像素。
+      try {
+        const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        const tab = tabs[0];
+        if (!tab) return { ok: false, error: '找不到当前标签页。' };
+        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+        return { ok: true, data: { dataUrl } };
+      } catch (err) {
+        return { ok: false, error: `截屏失败：${String(err?.message || err)}` };
+      }
     }
 
     case 'fetchImage': {
