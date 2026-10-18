@@ -14,8 +14,10 @@ import {
   promoteCandidate
 } from '../lib/glossary.js';
 import { clearTranslationCache, translationCacheSize } from '../lib/translate.js';
+import { applyI18nToDocument } from '../lib/i18n.js';
 
 const els = {
+  language: document.getElementById('language'),
   apiKey: document.getElementById('apiKey'),
   toggleKey: document.getElementById('toggleKey'),
   baseUrl: document.getElementById('baseUrl'),
@@ -92,10 +94,14 @@ function fillUI(value) {
   els.webSearch.checked = value.webSearch !== false;
   els.webSearchEngine.value = value.webSearchEngine || DEFAULTS.webSearchEngine;
   els.maxTokens.value = String(value.maxTokens ?? 0);
+  // 界面语言：填完表单后立刻套用（包括 <html lang> 和窗口标题）
+  els.language.value = value.language || DEFAULTS.language;
+  applyI18nToDocument(els.language.value, 'optTitle');
 }
 
 function collect() {
   return {
+    language: els.language.value,
     apiKey: els.apiKey.value.trim(),
     baseUrl: els.baseUrl.value.trim() || DEFAULTS.baseUrl,
     model: els.model.value,
@@ -201,6 +207,17 @@ async function handleTest() {
 }
 
 function bind() {
+  // 界面语言切换立即生效（不必点「保存设置」）—— 找语言设置的人希望马上看到变化
+  els.language.addEventListener('change', async () => {
+    const lang = els.language.value;
+    try {
+      await saveSettings({ language: lang });
+    } catch {
+      /* 保存失败也要先把界面切过去 */
+    }
+    applyI18nToDocument(lang, 'optTitle');
+  });
+
   els.temperature.addEventListener('input', () => {
     els.temperatureValue.textContent = Number(els.temperature.value).toFixed(1);
   });

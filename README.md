@@ -14,8 +14,16 @@
 </p>
 
 <p align="center">
+  <b>简体中文</b> · <a href="README.en.md">English</a>
+</p>
+
+<p align="center">
   一个跑在 Chrome 侧边栏里的雅思备考助手 —— 划词翻译、阅读题解析、听力题分析、写作思路与批改。<br />
   自带 2400 条离线词表、术语库和词汇自学习，<b>用得越多，越省 API 花费</b>。
+</p>
+
+<p align="center">
+  <b>界面语言</b>：简体中文 / English / 日本語 / 한국어 / Tiếng Việt（设置页可切换，立即生效）
 </p>
 
 ---

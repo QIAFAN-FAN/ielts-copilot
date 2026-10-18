@@ -10,84 +10,87 @@
     <header class="app-header">
       <div class="brand">
         <span class="logo">IELTS</span>
-        <span class="name">雅思助手</span>
+        <span class="name" data-i18n="appName">雅思助手</span>
       </div>
       <div class="header-actions">
-        <button id="btnGear" class="icon-btn" title="打开设置">⚙</button>
+        <button id="btnGear" class="icon-btn" data-i18n-title="settingsTitle" title="打开设置">⚙</button>
       </div>
     </header>
 
     <nav class="tabs" id="tabs">
-      <button class="tab active" data-mode="reading">阅读</button>
-      <button class="tab" data-mode="listening">听力</button>
-      <button class="tab" data-mode="writing">写作思路</button>
-      <button class="tab" data-mode="review">作文批改</button>
-      <button class="tab" data-mode="chat">划词精讲</button>
+      <button class="tab active" data-mode="reading" data-i18n="tabReading">阅读</button>
+      <button class="tab" data-mode="listening" data-i18n="tabListening">听力</button>
+      <button class="tab" data-mode="writing" data-i18n="tabWriting">写作思路</button>
+      <button class="tab" data-mode="review" data-i18n="tabReview">作文批改</button>
+      <button class="tab" data-mode="chat" data-i18n="tabChat">划词精讲</button>
     </nav>
 
     <div id="noKey" class="banner hidden">
-      <span>还没有配置 DeepSeek API Key。</span>
-      <button id="goOptions" class="link">去填写</button>
+      <span data-i18n="bannerNoKey">还没有配置 DeepSeek API Key。</span>
+      <button id="goOptions" class="link" data-i18n="btnGoFill">去填写</button>
     </div>
 
     <div id="modelWarn" class="banner hidden">
       <span id="modelWarnText"></span>
-      <button id="modelWarnFix" class="link">去设置</button>
+      <button id="modelWarnFix" class="link" data-i18n="btnGoSettings">去设置</button>
     </div>
 
     <section class="composer" id="composer">
       <div class="field-block hidden" id="examSourceRow">
         <div class="field-head">
-          <span class="field-label">题目出处（手动指定）</span>
+          <span class="field-label" data-i18n="labelQuestionSource">题目出处（手动指定）</span>
         </div>
         <input
           id="examSource"
           type="text"
           spellcheck="false"
+          data-i18n-placeholder="placeholderQuestionSource"
           placeholder="例如 Cambridge 18 Test 2 Passage 1，或 Cambridge 18 Test 3 Section 4"
         />
       </div>
 
       <div class="field-block hidden" id="passageBlock">
         <div class="field-head">
-          <span class="field-label" id="passageTitle">阅读原文</span>
+          <span class="field-label" id="passageTitle" data-i18n="labelPassage">阅读原文</span>
           <div class="inline-actions">
-            <button id="grabPage" class="ghost" title="只把识别到的「原文」填进这个框，不动下面的题目框">抓取本页</button>
-            <button id="useSelection" class="ghost" title="把网页上刚划选的文字填进「阅读原文」">用选中文字</button>
-            <button id="clearPassage" class="ghost">清空</button>
+            <button id="grabPage" class="ghost" data-i18n="btnGrabPage" title="只把识别到的「原文」填进这个框，不动下面的题目框">抓取本页</button>
+            <button id="useSelection" class="ghost" data-i18n="btnUseSelection" title="把网页上刚划选的文字填进「阅读原文」">用选中文字</button>
+            <button id="clearPassage" class="ghost" data-i18n="btnClear">清空</button>
           </div>
         </div>
         <textarea
           id="passage"
           spellcheck="false"
+          data-i18n-placeholder="placeholderPassage"
           placeholder="把雅思阅读文章粘到这里（可留空）；在网页上划选文章后点「用选中文字」也行。"
         ></textarea>
       </div>
 
       <div class="field-block">
         <div class="field-head">
-          <span class="field-label" id="inputTitle">题目 / 文章</span>
+          <span class="field-label" id="inputTitle" data-i18n="labelQuestion">题目 / 文章</span>
           <div class="inline-actions">
-            <button id="grabPageSecondary" class="ghost" title="只把识别到的「题目」填进这个框，不动上面的原文框">抓取本页</button>
-            <button id="useSelectionSecondary" class="ghost" title="把网页上刚划选的文字填进「题目」框">用选中文字</button>
-            <button id="clearInput" class="ghost">清空</button>
+            <button id="grabPageSecondary" class="ghost" data-i18n="btnGrabPage" title="只把识别到的「题目」填进这个框，不动上面的原文框">抓取本页</button>
+            <button id="useSelectionSecondary" class="ghost" data-i18n="btnUseSelection" title="把网页上刚划选的文字填进「题目」框">用选中文字</button>
+            <button id="clearInput" class="ghost" data-i18n="btnClear">清空</button>
           </div>
         </div>
         <textarea
           id="input"
           spellcheck="false"
+          data-i18n-placeholder="placeholderQuestion"
           placeholder="在网页上划选题目 → 点「用选中文字」；或点「抓取本页」自动识别整页内容；也可以直接粘贴。"
         ></textarea>
       </div>
 
       <div id="imageRow" class="field-block hidden">
         <div class="field-head">
-          <span class="field-label">图表 / 图片（小作文用）</span>
+          <span class="field-label" data-i18n="labelImage">图表 / 图片（小作文用）</span>
           <div class="inline-actions">
-            <button id="pickImage" class="ghost" title="从电脑里选图片">上传图片</button>
-            <button id="captureTab" class="ghost" title="截取当前标签页的可见区域（适合图片是 canvas / 受保护的图）">截取当前画面</button>
-            <button id="grabImages" class="ghost" title="自动抓取本页里的大图">抓取本页图片</button>
-            <button id="clearImages" class="ghost">清空</button>
+            <button id="pickImage" class="ghost" data-i18n="btnUploadImage" title="从电脑里选图片">上传图片</button>
+            <button id="captureTab" class="ghost" data-i18n="btnCaptureTab" title="截取当前标签页的可见区域（适合图片是 canvas / 受保护的图）">截取当前画面</button>
+            <button id="grabImages" class="ghost" data-i18n="btnGrabImages" title="自动抓取本页里的大图">抓取本页图片</button>
+            <button id="clearImages" class="ghost" data-i18n="btnClear">清空</button>
           </div>
         </div>
         <div id="imageList" class="image-list"></div>
@@ -95,19 +98,19 @@
       </div>
 
       <div id="taskRow" class="task-row hidden">
-        <span class="field-label">题型</span>
+        <span class="field-label" data-i18n="labelTask">题型</span>
         <div class="seg" id="taskSeg">
-          <button data-task="task2" class="active">Task 2 大作文</button>
-          <button data-task="task1">Task 1 小作文</button>
+          <button data-task="task2" class="active" data-i18n="task2">Task 2 大作文</button>
+          <button data-task="task1" data-i18n="task1">Task 1 小作文</button>
         </div>
       </div>
 
       <div class="run-row">
-        <button id="run" class="primary">开始分析</button>
-        <button id="stop" class="ghost hidden">停止生成</button>
+        <button id="run" class="primary" data-i18n="btnRun">开始分析</button>
+        <button id="stop" class="ghost hidden" data-i18n="btnStop">停止生成</button>
         <label class="mini-switch" title="简洁模式：只给答案和极简分析，明显省 token">
           <input id="briefMode" type="checkbox" />
-          <span>简洁</span>
+          <span data-i18n="labelBrief">简洁</span>
         </label>
         <span class="meta" id="inputMeta"></span>
       </div>
@@ -116,15 +119,15 @@
 
     <section class="result-section">
       <div class="section-head">
-        <span id="resultTitle">分析结果</span>
+        <span id="resultTitle" data-i18n="resultTitle">分析结果</span>
         <div class="inline-actions">
-          <button id="toggleExpand" class="ghost" title="放大结果区（占满侧边栏）">⛶ 放大</button>
-          <button id="copyResult" class="ghost">复制</button>
-          <button id="searchAnswer" class="ghost" title="用题目出处关键词打开搜索结果，核对官方答案">搜答案核对</button>
-          <button id="clearResult" class="ghost">清空</button>
+          <button id="toggleExpand" class="ghost" data-i18n="btnExpand" title="放大结果区（占满侧边栏）">⛶ 放大</button>
+          <button id="copyResult" class="ghost" data-i18n="btnCopy">复制</button>
+          <button id="searchAnswer" class="ghost" data-i18n="btnSearchAnswer" title="用题目出处关键词打开搜索结果，核对官方答案">搜答案核对</button>
+          <button id="clearResult" class="ghost" data-i18n="btnClear">清空</button>
         </div>
       </div>
-      <div id="result" class="markdown empty">分析结果会显示在这里。</div>
+      <div id="result" class="markdown empty" data-i18n="resultEmpty">分析结果会显示在这里。</div>
       <div id="status" class="status"></div>
     </section>
 

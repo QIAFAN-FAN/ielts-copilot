@@ -5,6 +5,7 @@ import { buildMessages, extractSearchQuery, stripSearchQuery } from '../lib/prom
 import { renderMarkdown } from '../lib/markdown.js';
 import { searchWeb, buildQueries, formatResultsForPrompt } from '../lib/websearch.js';
 import { deepseekWebSearch } from '../lib/dssearch.js';
+import { applyI18nToDocument, t } from '../lib/i18n.js';
 
 const MODES = {
   reading: {
@@ -153,7 +154,7 @@ function restoreFor(mode) {
     renderResult(state.answer);
   } else {
     els.result.classList.add('empty');
-    els.result.textContent = '分析结果会显示在这里。';
+    els.result.textContent = t('resultEmpty', state.settings?.language);
   }
   updateMeta();
 }
@@ -169,7 +170,7 @@ function setMode(mode) {
   els.inputTitle.textContent = meta.inputTitle;
   els.resultTitle.textContent = meta.resultTitle;
   els.modeTip.textContent = meta.tip;
-  els.run.textContent = meta.button;
+  els.run.textContent = t('btnRun', state.settings?.language);
   els.taskRow.classList.toggle('hidden', !(mode === 'writing' || mode === 'review'));
   els.passageBlock.classList.toggle('hidden', !meta.dual);
   els.composer.classList.toggle('dual', Boolean(meta.dual));
@@ -349,7 +350,7 @@ function setRunning(running) {
   state.running = running;
   els.run.disabled = running;
   els.stop.classList.toggle('hidden', !running);
-  els.run.textContent = running ? '生成中…' : MODES[state.mode].button;
+  els.run.textContent = running ? '…' : t('btnRun', state.settings?.language);
 }
 
 /* ---------------- 结果渲染 ---------------- */
@@ -1339,7 +1340,7 @@ function bindEvents() {
     state.answer = '';
     state.results[state.mode] = '';
     els.result.classList.add('empty');
-    els.result.textContent = '分析结果会显示在这里。';
+    els.result.textContent = t('resultEmpty', state.settings?.language);
     setStatus('');
     if (state.mode === 'chat') state.chatHistory = [];
     saveDraft(); // 清空要落盘，否则关掉侧边栏结果又回来了
@@ -1487,6 +1488,8 @@ function bindEvents() {
 
 async function init() {
   state.settings = await getSettings();
+  // 界面语言：先把静态文字换成用户选的语言，再做后面那些会写文字的初始化
+  applyI18nToDocument(state.settings?.language, 'appName');
   updateKeyBanner();
   updateModelWarn();
   els.briefMode.checked = state.settings?.briefMode === true;
@@ -1513,11 +1516,19 @@ async function init() {
   });
 
   onSettingsChanged((settings) => {
+    const langChanged = state.settings?.language !== settings.language;
     state.settings = settings;
     updateKeyBanner();
     updateModelWarn();
     // 设置页里刚改过的开关（如「手动指定题目出处」）要立刻反映到当前板块
     refreshModeVisibility();
+    // 换了界面语言：静态文字全部重渲染，另外两处 JS 写进去的动态文字也补刷一下
+    // （不调 setMode，避免打断正在进行的流式生成）
+    if (langChanged) {
+      applyI18nToDocument(settings.language, 'appName');
+      els.run.textContent = state.running ? '…' : t('btnRun', settings.language);
+      if (!state.answer) els.result.textContent = t('resultEmpty', settings.language);
+    }
   });
 }
 

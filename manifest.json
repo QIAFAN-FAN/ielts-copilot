@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "雅思助手 IELTS Copilot",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "雅思专用助手：划词翻译、阅读题解析、听力答案分析、写作思路与批改，接入你自己的 DeepSeek API。",
   "minimum_chrome_version": "116",
   "permissions": [

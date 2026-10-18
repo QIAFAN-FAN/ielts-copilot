@@ -9,12 +9,28 @@
   <body>
     <main class="wrap">
       <header class="page-head">
-        <h1>雅思助手 · 设置</h1>
-        <p class="sub">填好 API Key 就能用。设置只存在你本机。</p>
+        <h1 data-i18n="optTitle">雅思助手 · 设置</h1>
+        <p class="sub" data-i18n="optSub">填好 API Key 就能用。设置只存在你本机。</p>
       </header>
 
       <section class="card">
-        <h2>DeepSeek 接口</h2>
+        <div class="field">
+          <label for="language" data-i18n="labelLanguage">界面语言</label>
+          <select id="language">
+            <option value="zh">简体中文</option>
+            <option value="en">English</option>
+            <option value="ja">日本語</option>
+            <option value="ko">한국어</option>
+            <option value="vi">Tiếng Việt</option>
+          </select>
+          <p class="hint" data-i18n="langNote">
+            界面主干已支持这 5 种语言；部分详细说明仍是中文，会在后续版本继续补齐。
+          </p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 data-i18n="secApi">DeepSeek 接口</h2>
 
         <div class="field">
           <label for="apiKey">API Key</label>
