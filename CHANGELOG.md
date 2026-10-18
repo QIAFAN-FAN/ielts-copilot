@@ -12,6 +12,35 @@
 
 ## v0.1.8
 
+### 修复：OCR 引擎加载失败、取不到图片像素
+
+**问题 1：`Failed to execute 'importScripts' on 'WorkerGlobalScope'`**
+
+两个根因叠在一起：
+
+- Tesseract.js 默认把 worker 脚本包成 **`blob:` URL** 再 `new Worker()`，而 **MV3 的 CSP 不允许 `blob:` 作为 worker 源**。
+  → 加 `workerBlobURL: false`，直接用 `chrome-extension://` 的真实地址；CSP 也补上 `worker-src 'self' blob:`
+- 指定 `OEM=1`（**LSTM_ONLY**）后，引擎要找的是 **`tesseract-core-simd-lstm.wasm.js`**，
+  而我当初只下载了**不带 lstm** 的那一对文件。
+  → 补下载 `-lstm` 的两个文件，并删掉用不上的非 lstm 版（**省 8MB**，剩 10.2MB）
+
+**问题 2：`取不到这张图的像素（可能跨域受限）`**
+
+- 补上 **`blob:` 图片**的处理（前端生成的图，题库网站很常见）——在页面内 `fetch` + `FileReader` 读取
+- 取图改成**四级兜底**：`data:` 直用 → 同源 `canvas` → `blob:` 直读 → 后台带 host 权限按 URL 抓
+- 后台也失败时，把**具体原因**带进提示（如 `HTTP 403`），不再只说"取不到"
+
+**验证方式**（这次是真跑，不是静态检查）：在无头 Chrome 里加载真实的引擎与模型，
+用 canvas 画一张 `Hello IELTS` 的图片交给 OCR，结果为：
+
+```
+识别出 "Hello IELTS"（186ms）
+坐标 {"x0":27,"y0":48,"x1":263,"y1":80}、置信度 94.05
+第二次识别 11ms（worker 已复用，不重复加载模型）
+```
+
+---
+
 ### 修复：图译按钮闪烁 / 点了没反应
 
 鼠标移到「图译」小按钮上时，按钮会**一闪一闪**，或者直接消失、点下去没反应。
