@@ -1106,8 +1106,20 @@
     }
   }
 
+  /** 量出这张 dataURL 的实际像素尺寸（OCR 的 bbox 就是相对它的） */
+  async function measureDataUrl(dataUrl) {
+    try {
+      const blob = await (await fetch(dataUrl)).blob();
+      const bitmap = await createImageBitmap(blob);
+      const size = { width: bitmap.width, height: bitmap.height };
+      bitmap.close?.();
+      return size;
+    } catch {
+      return null;
+    }
+  }
   /** 把译文按原坐标覆盖回图片上；点遮罩或右上角 ✕ 收起 */
-  function renderImageOverlay(img, lines, rect) {
+  function renderImageOverlay(img, lines, rect, sourceSize) {
     removeImageOverlay();
     ensureHost();
     const overlay = document.createElement('div');
@@ -1119,9 +1131,11 @@
       `top:${rect.top + window.scrollY}px;` +
       `width:${rect.width}px;height:${rect.height}px;`;
 
-    // img 可能是 null（截屏翻译时没有对应的图片元素），用 rect 兜底
-    const naturalW = (img && (img.naturalWidth || img.width)) || rect.width;
-    const naturalH = (img && (img.naturalHeight || img.height)) || rect.height;
+    // ★ 关键：坐标基准必须是「真正送进 OCR 的那张图」的像素尺寸，
+    // 而不是 img.naturalWidth —— 走截屏兜底时送进去的是显示尺寸的裁剪图，
+    // 用原图像素做基准会让整张译文按错误比例缩放、位置全偏。
+    const naturalW = (sourceSize && sourceSize.width) || (img && (img.naturalWidth || img.width)) || rect.width;
+    const naturalH = (sourceSize && sourceSize.height) || (img && (img.naturalHeight || img.height)) || rect.height;
     const scaleX = rect.width / (naturalW || rect.width);
     const scaleY = rect.height / (naturalH || rect.height);
 
@@ -1219,8 +1233,18 @@
   }
 
   function removeImageOverlay() {
+    // 只删变量指向的那个是不够的：变量一旦被别处清空、DOM 里的旧覆盖层就永远留着，
+    // 于是上一张图的译文会叠到下一张图上。这里按 DOM 实际存在的节点清。
+    if (shadow) {
+      for (const el of shadow.querySelectorAll('.ocr-overlay')) el.remove();
+    }
     if (imgOverlay && imgOverlay.isConnected) imgOverlay.remove();
     imgOverlay = null;
+    // 页面里可能残留多个 host（ensureHost 重建过），把它们的覆盖层也一起清掉
+    for (const node of document.querySelectorAll('div')) {
+      if (!node.shadowRoot || node === host) continue;
+      for (const el of node.shadowRoot.querySelectorAll('.ocr-overlay')) el.remove();
+    }
   }
 
   /** 翻译一张图片：取图 → 后台 OCR + 翻译 → 覆盖回原位 */
@@ -1243,7 +1267,7 @@
         );
         return;
       }
-      await runImageTranslation(img, rect, dataUrl);
+      await runImageTranslation(img, rect, dataUrl, await measureDataUrl(dataUrl));
     } finally {
       imgBusy = false;
     }
@@ -1268,7 +1292,7 @@
       }
       // 只用屏幕可见区域，坐标用视口坐标
       const rect = { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
-      await runImageTranslation(null, rect, shot);
+      await runImageTranslation(null, rect, shot, await measureDataUrl(shot));
     } catch (err) {
       toast(`翻译这一屏失败：${String(err?.message || err)}`);
     } finally {
@@ -1277,7 +1301,7 @@
   }
 
   /** 拿到 dataUrl 之后共用的一段：OCR + 翻译 + 覆盖回原位 */
-  async function runImageTranslation(img, rect, dataUrl) {
+  async function runImageTranslation(img, rect, dataUrl, sourceSize) {
     toast('正在识别图片文字…（首次要加载本地 OCR 模型，会慢一点）');
     const res = await sendMessage({
       type: 'translateImage',
@@ -1288,7 +1312,7 @@
       toast(res?.error || '图片翻译失败');
       return;
     }
-    renderImageOverlay(img, res.data?.lines || [], rect);
+    renderImageOverlay(img, res.data?.lines || [], rect, sourceSize);
   }
 
   /* ---------------- 响应后台请求 ---------------- */
