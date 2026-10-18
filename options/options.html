@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>雅思助手 · 设置</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <header class="page-head">
+        <h1>雅思助手 · 设置</h1>
+        <p class="sub">填好 API Key 就能用。设置只存在你本机。</p>
+      </header>
+
+      <section class="card">
+        <h2>DeepSeek 接口</h2>
+
+        <div class="field">
+          <label for="apiKey">API Key</label>
+          <div class="row">
+            <input
+              id="apiKey"
+              type="password"
+              placeholder="sk-..."
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <button id="toggleKey" class="ghost" type="button">显示</button>
+          </div>
+          <p class="hint">
+            去 <a href="https://platform.deepseek.com" target="_blank" rel="noopener">platform.deepseek.com</a>
+            的「API Keys」创建。
+          </p>
+        </div>
+
+        <div class="grid2">
+          <div class="field">
+            <label for="baseUrl">接口地址</label>
+            <input id="baseUrl" type="text" spellcheck="false" placeholder="https://api.deepseek.com" />
+            <p class="hint">默认即可。</p>
+          </div>
+          <div class="field">
+            <label for="model">模型</label>
+            <select id="model">
+              <option value="deepseek-flash">deepseek-flash（推荐：快、便宜）</option>
+              <option value="deepseek-v4-pro">deepseek-v4-pro（更强，更贵）</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="temperature">温度 <span id="temperatureValue" class="pill">0.3</span></label>
+          <input id="temperature" type="range" min="0" max="1.5" step="0.1" />
+          <p class="hint">越低越稳定，做题建议 0.2 ~ 0.4。</p>
+        </div>
+
+        <div class="row">
+          <button id="test" class="primary" type="button">测试连接</button>
+          <span id="testStatus" class="status"></span>
+        </div>
+        <p class="hint">测试会真实调用一次模型，产生极小费用。</p>
+      </section>
+
+      <section class="card">
+        <h2>做题偏好</h2>
+
+        <div class="grid2">
+          <div class="field">
+            <label for="targetBand">目标分数</label>
+            <select id="targetBand">
+              <option value="5">5.0</option>
+              <option value="5.5">5.5</option>
+              <option value="6">6.0</option>
+              <option value="6.5">6.5</option>
+              <option value="7">7.0</option>
+              <option value="7.5">7.5</option>
+              <option value="8">8.0</option>
+              <option value="8.5">8.5</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="explainLang">讲解语言</label>
+            <select id="explainLang">
+              <option value="zh">中文讲解（答案与例句保留英文）</option>
+              <option value="en">全英文讲解</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="translateEngine">翻译方式（划词翻译用）</label>
+          <select id="translateEngine">
+            <option value="smart">智能（推荐）：能离线就离线，省 token</option>
+            <option value="local">只用离线词表：零 token，断网可用</option>
+            <option value="ai">一律用 AI：最好，也最费</option>
+          </select>
+          <p class="hint">内置词表约 2400 词，单词短语秒出、不花钱。</p>
+        </div>
+
+        <label class="check">
+          <input id="manualExamSource" type="checkbox" />
+          <span>手动指定题目出处</span>
+        </label>
+        <p class="hint">开启后侧边栏多一个「题目出处」框，填了更准。</p>
+
+        <label class="check">
+          <input id="smartSplit" type="checkbox" />
+          <span>抓取本页时用 AI 判断原文 / 题目</span>
+        </label>
+        <p class="hint">只在自动识别不准时才调用一次极短的 AI。</p>
+
+        <label class="check">
+          <input id="bubbleEnabled" type="checkbox" />
+          <span>划选英文后显示「译」气泡</span>
+        </label>
+        <label class="check">
+          <input id="autoTranslate" type="checkbox" />
+          <span>划选后自动翻译，不用再点气泡</span>
+        </label>
+
+        <div class="field">
+          <label for="bubbleOpacity">气泡透明度 <span id="bubbleOpacityValue" class="pill">100%</span></label>
+          <input id="bubbleOpacity" type="range" min="0.15" max="1" step="0.05" />
+          <p class="hint">调低后气泡变淡，鼠标移上去恢复不透明。</p>
+        </div>
+
+        <div class="field">
+          <label for="copyFormat">点气泡里译文旁的 📋 复制什么</label>
+          <select id="copyFormat">
+            <option value="zh">只要中文译文</option>
+            <option value="en">只要英文原文</option>
+            <option value="both">英文原文 + 中文译文</option>
+          </select>
+        </div>
+        <label class="check">
+          <input id="stream" type="checkbox" />
+          <span>流式输出：边生成边显示</span>
+        </label>
+
+        <label class="check">
+          <input id="webSearch" type="checkbox" />
+          <span>分析前先联网核对题目出处</span>
+        </label>
+
+        <div class="field">
+          <label for="webSearchEngine">联网检索方式</label>
+          <select id="webSearchEngine">
+            <option value="deepseek">DeepSeek 官方搜索（推荐）</option>
+            <option value="browser">浏览器搜索：抓必应 / DuckDuckGo</option>
+          </select>
+          <p class="hint">官方更准但要花 token，浏览器方式免费。</p>
+        </div>
+
+        <div class="field">
+          <label for="maxTokens">单次回复上限（tokens）</label>
+          <input id="maxTokens" type="number" min="0" max="32000" step="256" />
+          <p class="hint">留 0 用默认；分析整篇阅读建议 ≥ 4000。</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>怎么用</h2>
+        <ol class="steps">
+          <li><b>划词翻译：</b>划选英文 → 点「译」气泡</li>
+          <li><b>深入精讲：</b>气泡里点「深入精讲」</li>
+          <li><b>阅读题：</b>划选文章＋题目 → 侧边栏「阅读」→ 分析</li>
+          <li><b>听力题：</b>划选题目 → 侧边栏「听力」→ 分析</li>
+          <li><b>写作：</b>贴进「写作思路」/「作文批改」</li>
+          <li><b>右键菜单：</b>选中文字右键也能调用</li>
+        </ol>
+      </section>
+
+      <section class="card">
+        <h2>术语库</h2>
+        <p class="hint">
+          指定某些词必须怎么翻（如 bank → 河岸）。<b>只影响 AI 翻译</b>；气泡里的 📌 也能收藏。
+        </p>
+
+        <div class="row">
+          <input id="termEn" type="text" placeholder="英文（bank、account for）" />
+          <input id="termZh" type="text" placeholder="译名（河岸）" />
+          <button id="termAdd" type="button">添加</button>
+          <span id="termStatus" class="status"></span>
+        </div>
+
+        <div class="field">
+          <label for="termSearch">共 <span id="termCount">0</span> 条</label>
+          <input id="termSearch" type="text" placeholder="搜索…" />
+        </div>
+        <ul id="termList" class="term-list"></ul>
+
+        <details class="more">
+          <summary>批量导入 / 恢复内置术语</summary>
+          <div class="field">
+            <label for="termBulk">每行一条：英文|中文</label>
+            <textarea id="termBulk" rows="4" placeholder="bank|河岸&#10;level off|趋于平稳"></textarea>
+            <div class="row">
+              <button id="termImport" type="button">导入</button>
+              <button id="termReset" type="button">恢复内置术语</button>
+              <span id="termBulkStatus" class="status"></span>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <section class="card">
+        <h2>词汇学习</h2>
+        <p class="hint">
+          AI 翻过的生词攒够 3 次一致就自动记住，<b>以后这些句子不调 AI 也能翻</b>，越用越省。
+        </p>
+
+        <div class="field">
+          <label for="learnSearch">已学会 <span id="learnCount">0</span> 个</label>
+          <input id="learnSearch" type="text" placeholder="搜索…" />
+        </div>
+        <ul id="learnList" class="term-list"></ul>
+
+        <div class="field">
+          <label>候选池（攒够 3 次自动收录）</label>
+          <ul id="candList" class="term-list candidates"></ul>
+        </div>
+
+        <div class="row">
+          <button id="learnClear" type="button">清空已学词</button>
+          <button id="cacheClear" type="button">清空翻译缓存</button>
+          <span id="learnStatus" class="status"></span>
+        </div>
+
+        <details class="more">
+          <summary>会不会学错词义？</summary>
+          <p class="hint">
+            不会。① 词表里已有的词不学；② 一个词出现过两种以上释义（说明有歧义，如 bank 河岸 / 银行）
+            就永不收录；③ 学到的词只在内置词表查不到时才用，不覆盖原释义；④ 上面的列表随时可删。
+          </p>
+        </details>
+      </section>
+
+      <div class="footer">
+        <button id="save" class="primary" type="button">保存设置</button>
+        <span id="saveStatus" class="status"></span>
+      </div>
+    </main>
+
+    <script type="module" src="options.js"></script>
+  </body>
+</html>
