@@ -918,6 +918,7 @@
   let imgChip = null;
   let imgOverlay = null;
   let imgBusy = false;
+  let lastImageFetchError = '';
 
   function hideImgChip() {
     if (imgChip && imgChip.isConnected) imgChip.remove();
@@ -945,14 +946,14 @@
       `top:${Math.round(rect.top + 6)}px;`;
   }
 
-  /** 把页面上的图片转成 dataURL：同源用 canvas，跨域交给后台 fetch */
+  /** 把页面上的图片转成 dataURL：同源 canvas → blob 直读 → 后台按 URL 抓，三级兜底 */
   async function imageToDataUrl(img) {
     const isCanvas = img.tagName === 'CANVAS';
-    if (!isCanvas) {
-      const raw = img.currentSrc || img.src || '';
-      if (raw.startsWith('data:')) return raw;
-    }
-    // 先本地取（同源可行，也省一次网络）
+    const raw = isCanvas ? '' : img.currentSrc || img.src || '';
+
+    if (raw.startsWith('data:')) return raw;
+
+    // ① 本地 canvas（同源可行，也省一次网络）
     try {
       const canvas = document.createElement('canvas');
       const w = isCanvas ? img.width : img.naturalWidth || img.width;
@@ -966,13 +967,33 @@
         if (url && url.length > 200) return url;
       }
     } catch {
-      /* 跨域污染：交给后台按 URL 取 */
+      /* 跨域污染：继续往下兜底 */
     }
     if (isCanvas) return '';
-    const src = img.currentSrc || img.src || '';
-    if (!/^https?:/i.test(src)) return '';
-    const res = await sendMessage({ type: 'fetchImage', url: src });
-    return res?.ok ? res.data?.dataUrl || '' : '';
+
+    // ② blob: 图片（前端生成的图，题库站很常见）——在页面里能直接读到
+    if (raw.startsWith('blob:')) {
+      try {
+        const res = await fetch(raw);
+        const blob = await res.blob();
+        return await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => resolve('');
+          reader.readAsDataURL(blob);
+        });
+      } catch {
+        return '';
+      }
+    }
+
+    // ③ http(s)：内容脚本受页面 CORS 限制，交给后台带权限去抓
+    if (!/^https?:/i.test(raw)) return '';
+    const res = await sendMessage({ type: 'fetchImage', url: raw });
+    if (res?.ok && res.data?.dataUrl) return res.data.dataUrl;
+    // 后台也抓不到时，把原因带到 UI 上，别只说"取不到"
+    lastImageFetchError = res?.error || '后台也没取到这张图';
+    return '';
   }
 
   /** 把译文按原坐标覆盖回图片上；点遮罩或右上角 ✕ 收起 */
@@ -1054,10 +1075,13 @@
       return;
     }
     imgBusy = true;
+    lastImageFetchError = '';
     try {
       const dataUrl = await imageToDataUrl(img);
       if (!dataUrl) {
-        toast('取不到这张图的像素（可能跨域受限），可以改用「截取当前画面」');
+        // 把具体原因说出来，而不是笼统的"取不到"
+        const reason = lastImageFetchError ? `（${lastImageFetchError}）` : '';
+        toast(`取不到这张图的像素${reason}。可以改用「截取当前画面」，或先把图片存到本地再「上传图片」。`);
         return;
       }
       toast('正在识别图片文字…（首次要加载本地 OCR 模型，会慢一点）');
