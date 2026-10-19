@@ -373,45 +373,83 @@ async function runOcr(dataUrl, jobId) {
  * 几十次请求，又慢又贵。
  * 只有纯数字/符号的行会被跳过（不需要翻译，也省 token）。
  */
+/** 把模型返回的 JSON 文本尽量救回来（可能被 ```json 包裹、前后带解释） */
+function parseLooseJson(text) {
+  const cleaned = String(text || '')
+    .replace(/^[\s\S]*?```(?:json)?\s*/i, '')
+    .replace(/```[\s\S]*$/, '')
+    .trim();
+  const a = cleaned.indexOf('{');
+  const b = cleaned.lastIndexOf('}');
+  if (a < 0 || b <= a) return null;
+  try {
+    return JSON.parse(cleaned.slice(a, b + 1));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 把 OCR 识别出的段落整块翻译成中文。
+ *
+ * 用 JSON 往返而不是「序号. 译文」的文本格式：
+ * 后者只要模型换个写法（合并行、加解释、序号错位）就会整批错位或丢行，
+ * 而且很难判断到底丢了哪条。JSON 有明确的结构，能逐条核对 id。
+ * 解析失败时退回到文本格式再试一次，双保险。
+ */
 async function translateOcrLines(lines, settings) {
   const targets = [];
   lines.forEach((line, index) => {
-    if (/[A-Za-z\u4e00-\u9fff]/.test(String(line?.text || ''))) {
+    if (/[A-Za-z\u4e00-\u9fff\u3040-\u30ff]/.test(String(line?.text || ''))) {
       targets.push({ index, text: String(line.text) });
     }
   });
   if (!targets.length) return lines;
 
-  const payload = targets.map((item, i) => `${i + 1}. ${item.text}`).join('\n');
-  let raw = '';
+  const items = targets.map((item, i) => ({ id: i + 1, text: item.text }));
+  const zhById = new Map();
+
   try {
-    raw = await chatCompletion({
+    const raw = await chatCompletion({
       settings,
       messages: [
         {
           role: 'system',
           content:
-            '你是翻译助手。把用户给的编号文本逐行翻译成简体中文。' +
-            '必须严格遵守：保持「序号. 译文」的格式；一个序号一行；不要合并、不要省略、不要增删行；不要输出任何解释、标题或前后缀。'
+            '你是翻译助手，把输入 items 里的每一条 text 翻译成简体中文。' +
+            '严格只输出 JSON：{"items":[{"id":1,"zh":"译文"}]}。' +
+            '必须保持 id 与输入一致，一条不漏、不多、不合并；不要输出任何解释或代码块标记。'
         },
-        { role: 'user', content: payload }
+        { role: 'user', content: JSON.stringify({ items }) }
       ],
       stream: false
     });
-  } catch {
-    // 翻译失败不算致命错误：把原文显示出来也比什么都不显示好
-    return lines;
-  }
 
-  const map = new Map();
-  for (const match of String(raw || '').matchAll(/(\d+)\s*[.、)]\s*([^\n]+)/g)) {
-    map.set(Number(match[1]), match[2].trim());
+    const parsed = parseLooseJson(raw);
+    if (parsed && Array.isArray(parsed.items)) {
+      for (const it of parsed.items) {
+        const id = Number(it?.id);
+        const zh = String(it?.zh || it?.translation || '').trim();
+        if (id >= 1 && id <= targets.length && zh) zhById.set(id, zh);
+      }
+    }
+
+    // 兜底：JSON 没解析出来（或一条都没拿到）时，按「序号. 译文」再解一次
+    if (zhById.size === 0) {
+      for (const m of String(raw || '').matchAll(/(\d+)\s*[.、)]\s*([^\n]+)/g)) {
+        const id = Number(m[1]);
+        if (id >= 1 && id <= targets.length) zhById.set(id, m[2].trim());
+      }
+    }
+  } catch {
+    // 翻译失败不算致命：显示原文也比什么都不显示好
+    return lines;
   }
 
   return lines.map((line, index) => {
     const pos = targets.findIndex((item) => item.index === index);
     if (pos < 0) return line;
-    const zh = map.get(pos + 1);
+    const zh = zhById.get(pos + 1);
     return zh ? { ...line, translated: zh } : line;
   });
 }

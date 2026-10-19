@@ -188,10 +188,12 @@
       background: rgba(255,255,255,.06);
     }
     .ocr-line {
-      position: absolute; overflow: hidden; white-space: nowrap;
-      text-overflow: ellipsis; padding: 0 3px; box-sizing: border-box;
-      background: rgba(255,255,255,.94); color: #1f2430;
+      position: absolute; box-sizing: border-box; padding: 1px 3px;
+      background: rgba(255,255,255,.9); color: #1f2430;
       border-radius: 3px; font-weight: 500;
+      /* 允许换行：长译文不再被 nowrap 裁掉（「一句话看起来没翻出来」的主因） */
+      white-space: normal; word-break: break-word; overflow-wrap: anywhere;
+      line-height: 1.25; overflow: hidden;
     }
     .ocr-close {
       position: absolute; right: -8px; top: -10px;
@@ -1160,76 +1162,53 @@
       const rawW = Math.max(4, (box.x1 - box.x0) * scaleX);
       const rawH = Math.max(4, (box.y1 - box.y0) * scaleY);
 
-      // ① 判断竖排：必须「又窄又高」才算。
-      //    别把两行文字的标签（如 Windward / side）误判成竖排 ——
-      //    那种 bbox 也是高大于宽，但它其实是横排的两行。
+      // ① 判断竖排：必须「又窄又高」才算（别把两行标签误判成竖排）
       const isVertical = rawH > rawW * 1.6 && rawW <= Math.max(34, rawH * 0.32) && rawH >= 24;
 
-      // ② 位置严格贴合原文 bbox：用户要「覆盖哪里就翻译在哪里」，
-      //    所以不为了塞下字而挪动位置。
-      let boxLeft = rawLeft;
-      let boxTop = rawTop;
-      let boxW = rawW;
-      let boxH = rawH;
-
-      const minFont = 8;
-
-      // ③ 字号严格跟随原文字高（不设 30px 上限 —— 那会让小字被放大成大字）。
-      //    下限 8px 只为还能看见；放不下时靠横向压缩，绝不靠放大字号。
-      // 字号基准用「单行高」，不是 bbox 总高 ——
-      // 一句话折成两三行时 bbox 会变高，用总高算字号会把字放大。
+      // ② 字号：跟随「单行高」（不是 bbox 总高，否则折行的会放大），
+      //    并夹在 10~26 之间。中文行高约 1.25 倍，所以下限必须给到 10，
+      //    否则框矮时字被上下裁掉，看起来像「没翻出来」。
       const fontBase = Number(line.lineHeight) > 1 ? Number(line.lineHeight) : rawH;
-      let fontSize;
-      if (isVertical) {
-        // 竖排：一个字的宽度决定字号
-        fontSize = Math.max(minFont, boxW * 0.92);
-      } else {
-        fontSize = Math.max(minFont, fontBase * 0.86);
-      }
+      const fontSize = isVertical
+        ? Math.max(10, Math.min(26, Math.max(rawW, 10) * 0.92))
+        : Math.max(10, Math.min(26, Math.max(fontBase, 10) * 0.86));
 
-      // ④ 白块只需要包住译文自身
+      // ③ 宽度：让白块包住译文，但不超过原文占的范围（避免短译文撑满整图）。
+      //    放不下的部分靠**换行**解决，不再靠 nowrap 裁切或 scaleX 压扁。
       const need = textWidth(zh, fontSize);
+      let boxW;
       if (isVertical) {
-        // 竖排：宽度约等于一个字宽，高度按文字长度
-        boxW = Math.max(fontSize * 1.1, Math.min(boxW, fontSize * 1.3));
-        boxH = Math.min(Math.ceil(need) + 4, rect.height - boxTop);
+        boxW = Math.max(fontSize * 1.15, Math.min(rawW > 0 ? rawW : fontSize * 1.35, fontSize * 1.45));
       } else {
-        boxW = Math.min(Math.ceil(need) + 6, rect.width - boxLeft);
+        const want = Math.max(Math.ceil(need) + 8, fontSize * 2);
+        boxW = rawW > 0 ? Math.min(want, Math.max(rawW, fontSize * 2)) : want;
       }
+      const avail = Math.max(8, rect.width - rawLeft);
+      if (boxW > avail) boxW = avail;
+      if (boxW < 6) boxW = Math.min(6, avail);
 
-      // ⑤ 收尾：不越界
-      if (boxLeft < 0) boxLeft = 0;
-      if (boxTop < 0) boxTop = 0;
-      if (boxW < 4) boxW = 4;
-      if (boxH < 4) boxH = 4;
-      if (boxLeft + boxW > rect.width) boxW = Math.max(4, rect.width - boxLeft);
-      if (boxTop + boxH > rect.height) boxH = Math.max(4, rect.height - boxTop);
+      // ④ 高度用 min-height：至少放得下一行中文，内容多了自动长高（不再裁掉）
+      const minH = Math.max(rawH, fontSize * 1.35);
 
-      // ⑥ 真的放不下就轻微压缩（不放大字号、不挪位置）
-      let squeeze = 1;
-      const limit = isVertical ? boxH - 2 : boxW - 2;
-      if (need > limit && limit > 0) {
-        squeeze = Math.max(0.62, limit / need);
-      }
       const item = document.createElement('div');
       item.className = 'ocr-line';
       item.style.cssText =
-        `position:absolute;left:${boxLeft}px;top:${boxTop}px;` +
-        `width:${boxW}px;height:${boxH}px;` +
+        `position:absolute;left:${rawLeft}px;top:${rawTop}px;` +
+        `width:${boxW}px;min-height:${minH}px;` +
         `font-size:${fontSize}px;` +
         (isVertical
-          ? `writing-mode:vertical-rl;text-orientation:upright;` +
-            `display:block;line-height:${boxW}px;text-align:center;`
-          : `display:flex;align-items:center;justify-content:flex-start;`) +
-        `overflow:hidden;white-space:nowrap;` +
-        (squeeze < 1
-          ? isVertical
-            ? `transform:scaleY(${squeeze.toFixed(3)});transform-origin:center top;`
-            : `transform:scaleX(${squeeze.toFixed(3)});transform-origin:left center;`
-          : '');
+          ? `writing-mode:vertical-rl;text-orientation:upright;text-align:center;`
+          : `display:flex;align-items:center;`);
       item.textContent = zh;
       item.title = `${zh}\n（原文：${String(line.text || '').trim()}）`;
       overlay.appendChild(item);
+
+      // ⑤ 追加后量实际高度（要等它进了 DOM 才量得准），
+      //    超出图片底部就把整块往上挪，保证完整可见。
+      const realH = item.offsetHeight || minH;
+      if (rawTop + realH > rect.height) {
+        item.style.top = `${Math.max(0, Math.min(rawTop, rect.height - realH))}px`;
+      }
       painted += 1;
     }
 
