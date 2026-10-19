@@ -1053,7 +1053,7 @@
           }
         };
         im.onerror = () => finish('');
-        setTimeout(() => finish(''), 8000);
+        setTimeout(() => finish(''), 3000);
         im.src = src;
       } catch {
         finish('');
@@ -1160,37 +1160,65 @@
       const rawW = Math.max(4, (box.x1 - box.x0) * scaleX);
       const rawH = Math.max(4, (box.y1 - box.y0) * scaleY);
 
-      // ① 横向刚好贴合原文宽度（不额外加内边距，避免顶到相邻块）
+      // ① 判断这一行是横排还是竖排。
+      //    OCR 给的是外接矩形：高明显大于宽，基本就是竖排文字（竖排中文/日文很常见）。
+      const isVertical = rawH > rawW * 1.45 && rawH >= 14;
+
       let boxLeft = rawLeft;
       let boxW = rawW;
-
-      // ② 纵向：字号至少要 10px 才看得清。框太矮就往上/下各扩一点，
-      //    优先往上（OCR 的 y0 通常贴着文字顶部，往上扩不容易压到下一行）
-      const minFont = 10;
-      let boxH = Math.max(rawH, minFont);
       let boxTop = rawTop;
-      if (boxH > rawH) {
-        const grow = boxH - rawH;
-        boxTop = Math.max(0, rawTop - grow * 0.6);
-      }
-      // 不要超出整个覆盖层
-      if (boxTop + boxH > rect.height) boxTop = Math.max(0, rect.height - boxH);
-      if (boxLeft + boxW > rect.width) boxW = Math.max(4, rect.width - boxLeft);
+      let boxH = rawH;
 
-      // ③ 字号自适应：从「框高的 0.92 倍」开始往下试，直到这一行能放得下
-      let fontSize = Math.min(boxH * 0.92, 30);
-      while (fontSize > minFont && textWidth(zh, fontSize) > boxW - 2) {
-        fontSize = Math.round((fontSize - 0.4) * 10) / 10;
-      }
-      // 循环可能降到 minFont 以下，兜回来保证可读
-      if (fontSize < minFont) fontSize = minFont;
+      const minFont = 10;
 
-      // ④ 缩到最小还是放不下 → 横向压缩（保留清晰度，只压扁宽度）
-      //    但压缩也有下限：压得太狠会变成一条细线，反而看不清。
+      if (isVertical) {
+        // 竖排：宽度由文字本身决定（竖排一行本来就窄），高度贴合原文
+        boxH = Math.max(rawH, minFont * 1.6);
+        boxW = Math.max(Math.min(rawW, boxH), minFont * 1.1);
+        if (boxTop + boxH > rect.height) boxTop = Math.max(0, rect.height - boxH);
+        if (boxLeft + boxW > rect.width) boxW = Math.max(6, rect.width - boxLeft);
+      } else {
+        // 横排：白块只包住译文实际需要的宽度，不要撑满原文的外接矩形 ——
+        // 一行里常有多段分散的文字（如 Name … Cost），bbox 会横跨整行，
+        // 若直接按 bbox 画白块，短译文的背景也会占满整张图宽度。
+        // 用「这一行本来该有的字号」去量，白块才贴合译文；露出的原文正好用来对照。
+        const naturalFont = Math.max(minFont, Math.min(rawH * 0.92, 30));
+        const naturalNeed = textWidth(zh, naturalFont);
+        boxW = Math.min(rawW, Math.max(Math.ceil(naturalNeed) + 6, minFont * 1.6));
+
+        boxH = Math.max(rawH, minFont);
+        if (boxH > rawH) {
+          // 框太矮放不下字：往上扩（OCR 的 y0 通常贴文字顶部，往上扩不易压下一行）
+          const grow = boxH - rawH;
+          boxTop = Math.max(0, rawTop - grow * 0.6);
+        }
+        if (boxTop + boxH > rect.height) boxTop = Math.max(0, rect.height - boxH);
+        if (boxLeft + boxW > rect.width) boxW = Math.max(4, rect.width - boxLeft);
+      }
+
+      // ② 字号自适应
+      let fontSize;
+      if (isVertical) {
+        // 竖排：字号受框宽限制（一个字的宽度），不做横向压缩
+        fontSize = Math.min(boxW * 0.92, 26);
+        fontSize = Math.max(fontSize, minFont);
+      } else {
+        fontSize = Math.min(boxH * 0.92, 30);
+        while (fontSize > minFont && textWidth(zh, fontSize) > boxW - 2) {
+          fontSize = Math.round((fontSize - 0.4) * 10) / 10;
+        }
+        if (fontSize < minFont) fontSize = minFont;
+      }
+
+      // ③ 缩到最小还是放不下 → 横向压缩（保留清晰度，只压扁宽度）
+      //    压缩有下限：压得太狠会变成一条细线，反而看不清。
       //    宁可截断（超出的部分被 overflow 裁掉，鼠标悬停能看全文）。
-      const need = textWidth(zh, fontSize);
-      let squeeze = need > boxW - 2 ? (boxW - 2) / need : 1;
-      if (squeeze < 0.62) squeeze = 0.62;
+      let squeeze = 1;
+      if (!isVertical) {
+        const need = textWidth(zh, fontSize);
+        squeeze = need > boxW - 2 ? (boxW - 2) / need : 1;
+        if (squeeze < 0.62) squeeze = 0.62;
+      }
 
       const item = document.createElement('div');
       item.className = 'ocr-line';
@@ -1198,7 +1226,10 @@
         `position:absolute;left:${boxLeft}px;top:${boxTop}px;` +
         `width:${boxW}px;height:${boxH}px;` +
         `font-size:${fontSize}px;` +
-        `display:flex;align-items:center;justify-content:flex-start;` +
+        (isVertical
+          ? `writing-mode:vertical-rl;text-orientation:upright;` +
+            `display:block;line-height:${boxW}px;text-align:center;`
+          : `display:flex;align-items:center;justify-content:flex-start;`) +
         `overflow:hidden;white-space:nowrap;` +
         (squeeze < 1 ? `transform:scaleX(${squeeze.toFixed(3)});transform-origin:left center;` : '');
       item.textContent = zh;
