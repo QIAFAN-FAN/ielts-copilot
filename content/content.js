@@ -1160,66 +1160,54 @@
       const rawW = Math.max(4, (box.x1 - box.x0) * scaleX);
       const rawH = Math.max(4, (box.y1 - box.y0) * scaleY);
 
-      // ① 判断这一行是横排还是竖排。
-      //    OCR 给的是外接矩形：高明显大于宽，基本就是竖排文字（竖排中文/日文很常见）。
-      const isVertical = rawH > rawW * 1.45 && rawH >= 14;
+      // ① 判断竖排：必须「又窄又高」才算。
+      //    别把两行文字的标签（如 Windward / side）误判成竖排 ——
+      //    那种 bbox 也是高大于宽，但它其实是横排的两行。
+      const isVertical = rawH > rawW * 1.6 && rawW <= Math.max(34, rawH * 0.32) && rawH >= 24;
 
+      // ② 位置严格贴合原文 bbox：用户要「覆盖哪里就翻译在哪里」，
+      //    所以不为了塞下字而挪动位置。
       let boxLeft = rawLeft;
-      let boxW = rawW;
       let boxTop = rawTop;
+      let boxW = rawW;
       let boxH = rawH;
 
-      const minFont = 10;
+      const minFont = 8;
 
-      if (isVertical) {
-        // 竖排：宽度由文字本身决定（竖排一行本来就窄），高度贴合原文
-        boxH = Math.max(rawH, minFont * 1.6);
-        boxW = Math.max(Math.min(rawW, boxH), minFont * 1.1);
-        if (boxTop + boxH > rect.height) boxTop = Math.max(0, rect.height - boxH);
-        if (boxLeft + boxW > rect.width) boxW = Math.max(6, rect.width - boxLeft);
-      } else {
-        // 横排：白块只包住译文实际需要的宽度，不要撑满原文的外接矩形 ——
-        // 一行里常有多段分散的文字（如 Name … Cost），bbox 会横跨整行，
-        // 若直接按 bbox 画白块，短译文的背景也会占满整张图宽度。
-        // 用「这一行本来该有的字号」去量，白块才贴合译文；露出的原文正好用来对照。
-        const naturalFont = Math.max(minFont, Math.min(rawH * 0.92, 30));
-        const naturalNeed = textWidth(zh, naturalFont);
-        boxW = Math.min(rawW, Math.max(Math.ceil(naturalNeed) + 6, minFont * 1.6));
-
-        boxH = Math.max(rawH, minFont);
-        if (boxH > rawH) {
-          // 框太矮放不下字：往上扩（OCR 的 y0 通常贴文字顶部，往上扩不易压下一行）
-          const grow = boxH - rawH;
-          boxTop = Math.max(0, rawTop - grow * 0.6);
-        }
-        if (boxTop + boxH > rect.height) boxTop = Math.max(0, rect.height - boxH);
-        if (boxLeft + boxW > rect.width) boxW = Math.max(4, rect.width - boxLeft);
-      }
-
-      // ② 字号自适应
+      // ③ 字号严格跟随原文字高（不设 30px 上限 —— 那会让小字被放大成大字）。
+      //    下限 8px 只为还能看见；放不下时靠横向压缩，绝不靠放大字号。
       let fontSize;
       if (isVertical) {
-        // 竖排：字号受框宽限制（一个字的宽度），不做横向压缩
-        fontSize = Math.min(boxW * 0.92, 26);
-        fontSize = Math.max(fontSize, minFont);
+        // 竖排：一个字的宽度决定字号
+        fontSize = Math.max(minFont, boxW * 0.92);
       } else {
-        fontSize = Math.min(boxH * 0.92, 30);
-        while (fontSize > minFont && textWidth(zh, fontSize) > boxW - 2) {
-          fontSize = Math.round((fontSize - 0.4) * 10) / 10;
-        }
-        if (fontSize < minFont) fontSize = minFont;
+        fontSize = Math.max(minFont, boxH * 0.86);
       }
 
-      // ③ 缩到最小还是放不下 → 横向压缩（保留清晰度，只压扁宽度）
-      //    压缩有下限：压得太狠会变成一条细线，反而看不清。
-      //    宁可截断（超出的部分被 overflow 裁掉，鼠标悬停能看全文）。
+      // ④ 白块只需要包住译文自身
+      const need = textWidth(zh, fontSize);
+      if (isVertical) {
+        // 竖排：宽度约等于一个字宽，高度按文字长度
+        boxW = Math.max(fontSize * 1.1, Math.min(boxW, fontSize * 1.3));
+        boxH = Math.min(Math.ceil(need) + 4, rect.height - boxTop);
+      } else {
+        boxW = Math.min(Math.ceil(need) + 6, rect.width - boxLeft);
+      }
+
+      // ⑤ 收尾：不越界
+      if (boxLeft < 0) boxLeft = 0;
+      if (boxTop < 0) boxTop = 0;
+      if (boxW < 4) boxW = 4;
+      if (boxH < 4) boxH = 4;
+      if (boxLeft + boxW > rect.width) boxW = Math.max(4, rect.width - boxLeft);
+      if (boxTop + boxH > rect.height) boxH = Math.max(4, rect.height - boxTop);
+
+      // ⑥ 真的放不下就轻微压缩（不放大字号、不挪位置）
       let squeeze = 1;
-      if (!isVertical) {
-        const need = textWidth(zh, fontSize);
-        squeeze = need > boxW - 2 ? (boxW - 2) / need : 1;
-        if (squeeze < 0.62) squeeze = 0.62;
+      const limit = isVertical ? boxH - 2 : boxW - 2;
+      if (need > limit && limit > 0) {
+        squeeze = Math.max(0.62, limit / need);
       }
-
       const item = document.createElement('div');
       item.className = 'ocr-line';
       item.style.cssText =
@@ -1231,7 +1219,11 @@
             `display:block;line-height:${boxW}px;text-align:center;`
           : `display:flex;align-items:center;justify-content:flex-start;`) +
         `overflow:hidden;white-space:nowrap;` +
-        (squeeze < 1 ? `transform:scaleX(${squeeze.toFixed(3)});transform-origin:left center;` : '');
+        (squeeze < 1
+          ? isVertical
+            ? `transform:scaleY(${squeeze.toFixed(3)});transform-origin:center top;`
+            : `transform:scaleX(${squeeze.toFixed(3)});transform-origin:left center;`
+          : '');
       item.textContent = zh;
       item.title = `${zh}\n（原文：${String(line.text || '').trim()}）`;
       overlay.appendChild(item);
