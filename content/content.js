@@ -1176,12 +1176,15 @@
 
       // ③ 字号严格跟随原文字高（不设 30px 上限 —— 那会让小字被放大成大字）。
       //    下限 8px 只为还能看见；放不下时靠横向压缩，绝不靠放大字号。
+      // 字号基准用「单行高」，不是 bbox 总高 ——
+      // 一句话折成两三行时 bbox 会变高，用总高算字号会把字放大。
+      const fontBase = Number(line.lineHeight) > 1 ? Number(line.lineHeight) : rawH;
       let fontSize;
       if (isVertical) {
         // 竖排：一个字的宽度决定字号
         fontSize = Math.max(minFont, boxW * 0.92);
       } else {
-        fontSize = Math.max(minFont, boxH * 0.86);
+        fontSize = Math.max(minFont, fontBase * 0.86);
       }
 
       // ④ 白块只需要包住译文自身
